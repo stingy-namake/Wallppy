@@ -12,9 +12,9 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QGridLayout,
-    QFrame, QMessageBox, QProgressBar, QSizePolicy
+    QFrame, QMessageBox, QProgressBar, QSizePolicy, QStatusBar
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
 
 # =============================================================================
@@ -283,16 +283,14 @@ class WallhavenGUI(QMainWindow):
         self.current_query = ""
         self.current_page = 1
         self.total_pages = 1
-        self.wallpapers = []          # All loaded wallpapers
+        self.wallpapers = []
         self.columns = 3
         self.workers = []
-        self.is_loading = False       # Prevent multiple simultaneous loads
+        self.is_loading = False
 
         self.init_ui()
         self.apply_dark_theme()
         self.scroll_area.viewport().installEventFilter(self)
-
-        # Connect scrollbar for infinite scrolling
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
 
     def eventFilter(self, obj, event):
@@ -341,11 +339,6 @@ class WallhavenGUI(QMainWindow):
 
         main_layout.addLayout(top_bar)
 
-        # Progress bar (top, for downloads)
-        self.download_progress = QProgressBar()
-        self.download_progress.setVisible(False)
-        main_layout.addWidget(self.download_progress)
-
         # Scroll Area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -362,17 +355,40 @@ class WallhavenGUI(QMainWindow):
         self.scroll_area.setWidget(self.grid_widget)
         main_layout.addWidget(self.scroll_area)
 
-        # Bottom loading indicator
+        # Bottom loading indicator (for page loads)
         self.loading_progress = QProgressBar()
         self.loading_progress.setVisible(False)
-        self.loading_progress.setRange(0, 0)  # Indeterminate
+        self.loading_progress.setRange(0, 0)
         main_layout.addWidget(self.loading_progress)
 
-        # Status bar with permanent tip
-        self.statusBar().showMessage("Ready")
+        # Setup status bar
+        self.status_bar = self.statusBar()
+        self.status_bar.showMessage("Ready")
+
+        # Tiny download progress bar in status bar (left side)
+        self.download_progress = QProgressBar()
+        self.download_progress.setFixedWidth(120)
+        self.download_progress.setFixedHeight(12)
+        self.download_progress.setRange(0, 100)
+        self.download_progress.setValue(0)
+        self.download_progress.setVisible(False)
+        self.download_progress.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #555;
+                border-radius: 2px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #0078d7;
+                border-radius: 2px;
+            }
+        """)
+        self.status_bar.addPermanentWidget(self.download_progress)
+
+        # Permanent tip on the right
         tip_label = QLabel("🖱️ Double‑click thumbnail to download")
         tip_label.setStyleSheet("color: #aaa; padding-right: 8px;")
-        self.statusBar().addPermanentWidget(tip_label)
+        self.status_bar.addPermanentWidget(tip_label)
 
     def apply_dark_theme(self):
         dark_palette = QPalette()
@@ -432,14 +448,13 @@ class WallhavenGUI(QMainWindow):
         """)
 
     def on_scroll(self, value):
-        """Check if we're near the bottom and load next page."""
         if self.is_loading:
             return
         if self.current_page >= self.total_pages:
             return
 
         scrollbar = self.scroll_area.verticalScrollBar()
-        if scrollbar.maximum() - value < 200:  # Within 200px of bottom
+        if scrollbar.maximum() - value < 200:
             self.load_next_page()
 
     def perform_search(self):
@@ -453,7 +468,7 @@ class WallhavenGUI(QMainWindow):
         self.total_pages = 1
         self.is_loading = True
         self.loading_progress.setVisible(True)
-        self.statusBar().showMessage(f"Searching for '{self.current_query}'...")
+        self.status_bar.showMessage(f"Searching for '{self.current_query}'...")
 
         self.worker = SearchWorker(self.current_query, self.current_page)
         self.worker.finished.connect(self.on_search_finished)
@@ -462,7 +477,6 @@ class WallhavenGUI(QMainWindow):
         self.workers.append(self.worker)
 
     def load_next_page(self):
-        """Load the next page and append results."""
         if self.is_loading:
             return
         if self.current_page >= self.total_pages:
@@ -470,7 +484,7 @@ class WallhavenGUI(QMainWindow):
 
         self.is_loading = True
         self.loading_progress.setVisible(True)
-        self.statusBar().showMessage(f"Loading page {self.current_page + 1}...")
+        self.status_bar.showMessage(f"Loading page {self.current_page + 1}...")
 
         self.worker = SearchWorker(self.current_query, self.current_page + 1)
         self.worker.finished.connect(self.on_search_finished)
@@ -483,29 +497,25 @@ class WallhavenGUI(QMainWindow):
         self.loading_progress.setVisible(False)
 
         if page == 1:
-            # New search – clear and rebuild
             self.wallpapers = wallpapers
             self.total_pages = total_pages
             self.current_page = 1
             self.rebuild_grid()
-            self.statusBar().showMessage(f"Found {len(wallpapers)} wallpapers (page 1/{total_pages})")
+            self.status_bar.showMessage(f"Found {len(wallpapers)} wallpapers (page 1/{total_pages})")
         else:
-            # Append new wallpapers
             self.wallpapers.extend(wallpapers)
             self.current_page = page
             self.total_pages = total_pages
             self.append_to_grid(wallpapers)
-            self.statusBar().showMessage(f"Loaded {len(wallpapers)} more wallpapers (page {page}/{total_pages})")
+            self.status_bar.showMessage(f"Loaded {len(wallpapers)} more wallpapers (page {page}/{total_pages})")
 
     def on_search_error(self, error_msg):
         self.is_loading = False
         self.loading_progress.setVisible(False)
         QMessageBox.critical(self, "Search Error", error_msg)
-        self.statusBar().showMessage("Search failed")
+        self.status_bar.showMessage("Search failed")
 
     def rebuild_grid(self):
-        """Clear and rebuild the entire grid from self.wallpapers."""
-        # Clear existing widgets
         while self.grid_layout.count():
             item = self.grid_layout.takeAt(0)
             if item.widget():
@@ -514,7 +524,6 @@ class WallhavenGUI(QMainWindow):
         if not self.wallpapers:
             return
 
-        # Recalculate columns if needed
         self.update_columns_from_width()
 
         for i, wp in enumerate(self.wallpapers):
@@ -528,7 +537,6 @@ class WallhavenGUI(QMainWindow):
         self.grid_layout.setRowStretch(row_count, 1)
 
     def append_to_grid(self, new_wallpapers):
-        """Add new wallpaper widgets to the existing grid."""
         start_index = len(self.wallpapers) - len(new_wallpapers)
         for i, wp in enumerate(new_wallpapers):
             global_index = start_index + i
@@ -542,9 +550,8 @@ class WallhavenGUI(QMainWindow):
         self.grid_layout.setRowStretch(row_count, 1)
 
     def download_wallpaper(self, wallpaper_data):
-        self.statusBar().showMessage("Downloading...")
+        self.status_bar.showMessage("Downloading...")
         self.download_progress.setVisible(True)
-        self.download_progress.setRange(0, 100)
         self.download_progress.setValue(0)
 
         self.dl_worker = DownloadWorker(wallpaper_data)
@@ -558,9 +565,8 @@ class WallhavenGUI(QMainWindow):
         if success:
             timestamp = datetime.now().strftime("%H:%M:%S")
             msg = f"✅ Downloaded: {filename}  →  {DOWNLOAD_FOLDER}  ({timestamp})"
-            self.statusBar().showMessage(msg)
+            self.status_bar.showMessage(msg)
 
-            # Update checkmark on corresponding widget
             for i in range(self.grid_layout.count()):
                 widget = self.grid_layout.itemAt(i).widget()
                 if isinstance(widget, WallpaperWidget):
@@ -568,7 +574,7 @@ class WallhavenGUI(QMainWindow):
                         widget.update_downloaded_status()
                         break
         else:
-            self.statusBar().showMessage(f"❌ Download failed: {filename}")
+            self.status_bar.showMessage(f"❌ Download failed: {filename}")
 
 # =============================================================================
 # Entry Point
