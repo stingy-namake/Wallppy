@@ -1,6 +1,7 @@
 For: Wallppy
-- Add home button
+- Add home button [done]
 - Add expand preview
 - Add zerochan (and other booru-models) as extensions
 - Build binary
 - Github
+- Break monolithic structure
