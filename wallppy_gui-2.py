@@ -8,12 +8,13 @@ Downloaded wallpapers show a green checkmark.
 import sys
 import os
 import requests
+import random
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QGridLayout,
     QFrame, QMessageBox, QProgressBar, QSizePolicy, QStatusBar,
-    QStackedWidget
+    QStackedWidget, QCheckBox, QFileDialog, QButtonGroup
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
@@ -22,15 +23,28 @@ from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
 # Configuration
 # =============================================================================
 API_URL = "https://wallhaven.cc/api/v1/search"
-DOWNLOAD_FOLDER = "./wallpapers"
+DEFAULT_DOWNLOAD_FOLDER = "./wallpapers"
 THUMB_SIZE = QSize(280, 158)  # 16:9
 THUMB_PADDING = 12
 
-if not os.path.exists(DOWNLOAD_FOLDER):
-    os.makedirs(DOWNLOAD_FOLDER)
+# Ensure download folder exists
+if not os.path.exists(DEFAULT_DOWNLOAD_FOLDER):
+    os.makedirs(DEFAULT_DOWNLOAD_FOLDER)
+
+# Anime-themed no-results messages
+NO_RESULTS_MESSAGES = [
+    "Nothing here... Maybe it's in another world?",
+    "This search result is a lie.",
+    "No wallpapers found. Believe it!",
+    "The data is empty. Just like my soul.",
+    "404: Wallpapers Not Found. Try a different keyword, nya~",
+    "Even the Great Sage couldn't find anything.",
+    "This search returned void. Like the Abyss.",
+    "No results. Perhaps you need the Sharingan to see them?",
+]
 
 # =============================================================================
-# Worker Threads
+# Worker Threads (SearchWorker updated to accept category/purity strings)
 # =============================================================================
 class SearchWorker(QThread):
     finished = pyqtSignal(list, int, int)  # wallpapers, page, total_pages
@@ -69,9 +83,10 @@ class DownloadWorker(QThread):
     finished = pyqtSignal(bool, str, str, str)  # success, filepath, filename, wall_id
     progress = pyqtSignal(int)
 
-    def __init__(self, wallpaper_data):
+    def __init__(self, wallpaper_data, download_folder):
         super().__init__()
         self.data = wallpaper_data
+        self.download_folder = download_folder
 
     def run(self):
         image_url = self.data.get("path")
@@ -89,7 +104,10 @@ class DownloadWorker(QThread):
             ext = "jpg"
 
         filename = f"wallppy-{wall_id}.{ext}"
-        filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+        filepath = os.path.join(self.download_folder, filename)
+
+        # Ensure directory exists
+        os.makedirs(self.download_folder, exist_ok=True)
 
         if os.path.exists(filepath):
             self.finished.emit(True, filepath, filename, wall_id)
@@ -131,7 +149,7 @@ class ThumbnailLoader(QThread):
             self.loaded.emit(QPixmap())
 
 # =============================================================================
-# Double‑Clickable Thumbnail Label
+# Double‑Clickable Thumbnail Label (unchanged)
 # =============================================================================
 class DoubleClickableLabel(QLabel):
     double_clicked = pyqtSignal()
@@ -142,14 +160,15 @@ class DoubleClickableLabel(QLabel):
         super().mouseDoubleClickEvent(event)
 
 # =============================================================================
-# Wallpaper Item Widget
+# Wallpaper Item Widget (unchanged, but uses dynamic download folder)
 # =============================================================================
 class WallpaperWidget(QFrame):
     download_triggered = pyqtSignal(dict)
 
-    def __init__(self, wallpaper_data, parent=None):
+    def __init__(self, wallpaper_data, download_folder, parent=None):
         super().__init__(parent)
         self.data = wallpaper_data
+        self.download_folder = download_folder
         self.thumb_url = wallpaper_data.get("thumbs", {}).get("large", "")
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet("""
@@ -242,7 +261,7 @@ class WallpaperWidget(QFrame):
         else:
             ext = "jpg"
         filename = f"wallppy-{wall_id}.{ext}"
-        filepath = os.path.join(DOWNLOAD_FOLDER, filename)
+        filepath = os.path.join(self.download_folder, filename)
         if os.path.exists(filepath):
             self.checkmark_label.show()
             self.checkmark_label.raise_()
@@ -270,13 +289,13 @@ class WallpaperWidget(QFrame):
         self.download_triggered.emit(self.data)
 
 # =============================================================================
-# Main Window with Stacked Layout (Landing Page + Results)
+# Main Window with Filter Toggles and Directory Chooser
 # =============================================================================
 class WallppyGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("wallppy")
-        self.setMinimumSize(682, 400)  # ~5% wider than before
+        self.setMinimumSize(682, 500)  # Increased height to fit new controls
         self.resize(1100, 700)
 
         # State
@@ -287,6 +306,7 @@ class WallppyGUI(QMainWindow):
         self.columns = 3
         self.workers = []
         self.is_loading = False
+        self.download_folder = DEFAULT_DOWNLOAD_FOLDER
 
         self.init_ui()
         self.apply_dark_theme()
@@ -303,16 +323,16 @@ class WallppyGUI(QMainWindow):
         self.stacked = QStackedWidget()
         main_layout.addWidget(self.stacked)
 
-        # Page 0: Landing page (centered search)
+        # ===== Page 0: Landing page (centered search + filters + directory) =====
         self.landing_page = QWidget()
         landing_layout = QVBoxLayout(self.landing_page)
         landing_layout.setAlignment(Qt.AlignCenter)
         landing_layout.setSpacing(20)
 
         search_container = QWidget()
-        search_container.setFixedWidth(500)
+        search_container.setFixedWidth(550)  # Slightly wider for filters
         container_layout = QVBoxLayout(search_container)
-        container_layout.setSpacing(10)
+        container_layout.setSpacing(15)
 
         # Title
         title = QLabel("wallppy")
@@ -340,16 +360,100 @@ class WallppyGUI(QMainWindow):
         self.landing_search_edit.returnPressed.connect(self.perform_search_from_landing)
         container_layout.addWidget(self.landing_search_edit)
 
-        # Hint
-        hint = QLabel("Press Enter to search")
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("color: #777; font-size: 12px; margin-top: 5px;")
-        container_layout.addWidget(hint)
+        # Hint: Enter to search
+        hint1 = QLabel("Press Enter to search")
+        hint1.setAlignment(Qt.AlignCenter)
+        hint1.setStyleSheet("color: #777; font-size: 12px;")
+        container_layout.addWidget(hint1)
+
+        # ===== Category Filters =====
+        filter_label = QLabel("Categories")
+        filter_label.setStyleSheet("color: #aaa; font-size: 13px; font-weight: bold; margin-top: 5px;")
+        container_layout.addWidget(filter_label)
+
+        cat_layout = QHBoxLayout()
+        cat_layout.setSpacing(20)
+        cat_layout.setAlignment(Qt.AlignCenter)
+
+        self.cat_general = QCheckBox("General")
+        self.cat_general.setChecked(True)
+        self.cat_general.setStyleSheet("color: #ddd; spacing: 5px;")
+        self.cat_anime = QCheckBox("Anime")
+        self.cat_anime.setChecked(True)
+        self.cat_anime.setStyleSheet("color: #ddd;")
+        self.cat_people = QCheckBox("People")
+        self.cat_people.setChecked(True)
+        self.cat_people.setStyleSheet("color: #ddd;")
+
+        cat_layout.addWidget(self.cat_general)
+        cat_layout.addWidget(self.cat_anime)
+        cat_layout.addWidget(self.cat_people)
+        container_layout.addLayout(cat_layout)
+
+        # ===== Purity Filters =====
+        purity_label = QLabel("Content")
+        purity_label.setStyleSheet("color: #aaa; font-size: 13px; font-weight: bold; margin-top: 5px;")
+        container_layout.addWidget(purity_label)
+
+        purity_layout = QHBoxLayout()
+        purity_layout.setSpacing(20)
+        purity_layout.setAlignment(Qt.AlignCenter)
+
+        self.purity_sfw = QCheckBox("SFW")
+        self.purity_sfw.setChecked(True)
+        self.purity_sfw.setStyleSheet("color: #ddd;")
+        self.purity_sketchy = QCheckBox("Sketchy")
+        self.purity_sketchy.setChecked(False)
+        self.purity_sketchy.setStyleSheet("color: #ddd;")
+        # NSFW omitted because it requires API key
+
+        purity_layout.addWidget(self.purity_sfw)
+        purity_layout.addWidget(self.purity_sketchy)
+        container_layout.addLayout(purity_layout)
+
+        # ===== Directory Chooser =====
+        dir_label = QLabel("Save to")
+        dir_label.setStyleSheet("color: #aaa; font-size: 13px; font-weight: bold; margin-top: 10px;")
+        container_layout.addWidget(dir_label)
+
+        dir_layout = QHBoxLayout()
+        dir_layout.setSpacing(10)
+
+        self.dir_edit = QLineEdit()
+        self.dir_edit.setText(self.download_folder)
+        self.dir_edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                border-radius: 4px;
+                padding: 8px;
+                color: white;
+            }
+        """)
+        self.dir_edit.setReadOnly(True)
+        dir_layout.addWidget(self.dir_edit)
+
+        self.browse_btn = QPushButton("Browse")
+        self.browse_btn.setFixedWidth(80)
+        self.browse_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #4d4d4d;
+            }
+        """)
+        self.browse_btn.clicked.connect(self.choose_directory)
+        dir_layout.addWidget(self.browse_btn)
+
+        container_layout.addLayout(dir_layout)
 
         landing_layout.addWidget(search_container)
         self.stacked.addWidget(self.landing_page)
 
-        # Page 1: Results page
+        # ===== Page 1: Results page (same as before, but with download_folder passed) =====
         self.results_page = QWidget()
         results_layout = QVBoxLayout(self.results_page)
         results_layout.setContentsMargins(12, 12, 12, 12)
@@ -391,7 +495,11 @@ class WallppyGUI(QMainWindow):
         top_bar.addStretch()
         results_layout.addLayout(top_bar)
 
-        # Scroll Area
+        # Container for grid and "no results" message
+        self.results_container = QStackedWidget()
+        results_layout.addWidget(self.results_container)
+
+        # Grid page
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -405,7 +513,18 @@ class WallppyGUI(QMainWindow):
         self.grid_layout.setContentsMargins(4, 4, 4, 4)
 
         self.scroll_area.setWidget(self.grid_widget)
-        results_layout.addWidget(self.scroll_area)
+        self.results_container.addWidget(self.scroll_area)
+
+        # No results page
+        self.no_results_widget = QWidget()
+        no_results_layout = QVBoxLayout(self.no_results_widget)
+        no_results_layout.setAlignment(Qt.AlignCenter)
+        self.no_results_label = QLabel()
+        self.no_results_label.setAlignment(Qt.AlignCenter)
+        self.no_results_label.setStyleSheet("color: #aaa; font-size: 18px; padding: 40px;")
+        self.no_results_label.setWordWrap(True)
+        no_results_layout.addWidget(self.no_results_label)
+        self.results_container.addWidget(self.no_results_widget)
 
         # Loading indicator
         self.loading_progress = QProgressBar()
@@ -415,10 +534,33 @@ class WallppyGUI(QMainWindow):
 
         self.stacked.addWidget(self.results_page)
 
+        # Start on landing page
         self.stacked.setCurrentIndex(0)
 
         self.scroll_area.viewport().installEventFilter(self)
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
+
+    def choose_directory(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Download Folder", self.download_folder)
+        if folder:
+            self.download_folder = folder
+            self.dir_edit.setText(folder)
+
+    def get_category_string(self):
+        """Convert checkbox states to Wallhaven category bitmask."""
+        cat = ""
+        cat += "1" if self.cat_general.isChecked() else "0"
+        cat += "1" if self.cat_anime.isChecked() else "0"
+        cat += "1" if self.cat_people.isChecked() else "0"
+        return cat
+
+    def get_purity_string(self):
+        """Convert checkbox states to Wallhaven purity bitmask."""
+        purity = ""
+        purity += "1" if self.purity_sfw.isChecked() else "0"
+        purity += "1" if self.purity_sketchy.isChecked() else "0"
+        purity += "0"  # NSFW always off
+        return purity
 
     def setup_status_bar(self):
         self.status_bar = self.statusBar()
@@ -464,15 +606,33 @@ class WallppyGUI(QMainWindow):
         QApplication.setPalette(dark_palette)
 
         self.setStyleSheet("""
+            * {
+                font-family: 'SF Mono', 'Menlo', 'Consolas', 'Cascadia Mono', 'Fira Code', 'Courier New', monospace;
+            }
             QMainWindow {
                 background-color: #1e1e1e;
             }
-            QLineEdit, QPushButton, QScrollArea {
+            QLineEdit, QPushButton, QScrollArea, QCheckBox {
                 background-color: #2d2d2d;
                 border: 1px solid #3d3d3d;
                 border-radius: 4px;
                 padding: 6px;
                 color: white;
+            }
+            QCheckBox {
+                border: none;
+                background: transparent;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+                border: 1px solid #555;
+                border-radius: 3px;
+                background-color: #2d2d2d;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #1E6FF0;
+                border-color: #1E6FF0;
             }
             QPushButton:hover {
                 background-color: #3d3d3d;
@@ -555,8 +715,15 @@ class WallppyGUI(QMainWindow):
         self.is_loading = True
         self.loading_progress.setVisible(True)
         self.status_bar.showMessage(f"Searching for '{self.current_query}'...")
+        # Hide any previous no-results message
+        self.results_container.setCurrentIndex(0)
 
-        self.worker = SearchWorker(self.current_query, self.current_page)
+        self.worker = SearchWorker(
+            self.current_query,
+            self.current_page,
+            self.get_category_string(),
+            self.get_purity_string()
+        )        
         self.worker.finished.connect(self.on_search_finished)
         self.worker.error.connect(self.on_search_error)
         self.worker.start()
@@ -572,7 +739,12 @@ class WallppyGUI(QMainWindow):
         self.loading_progress.setVisible(True)
         self.status_bar.showMessage(f"Loading page {self.current_page + 1}...")
 
-        self.worker = SearchWorker(self.current_query, self.current_page + 1)
+        self.worker = SearchWorker(
+            self.current_query,
+            self.current_page + 1,
+            self.get_category_string(),
+            self.get_purity_string()
+        )
         self.worker.finished.connect(self.on_search_finished)
         self.worker.error.connect(self.on_search_error)
         self.worker.start()
@@ -586,8 +758,14 @@ class WallppyGUI(QMainWindow):
             self.wallpapers = wallpapers
             self.total_pages = total_pages
             self.current_page = 1
-            self.rebuild_grid()
-            self.status_bar.showMessage(f"Found {len(wallpapers)} wallpapers (page 1/{total_pages})")
+            if not wallpapers:
+                # No results -> show random anime message
+                self.show_no_results()
+                self.status_bar.showMessage("No wallpapers found. Try a different search.")
+            else:
+                self.results_container.setCurrentIndex(0)
+                self.rebuild_grid()
+                self.status_bar.showMessage(f"Found {len(wallpapers)} wallpapers (page 1/{total_pages})")
         else:
             self.wallpapers.extend(wallpapers)
             self.current_page = page
@@ -600,6 +778,12 @@ class WallppyGUI(QMainWindow):
         self.loading_progress.setVisible(False)
         QMessageBox.critical(self, "Search Error", error_msg)
         self.status_bar.showMessage("Search failed")
+
+    def show_no_results(self):
+        """Display a random anime-themed 'no results' message."""
+        message = random.choice(NO_RESULTS_MESSAGES)
+        self.no_results_label.setText(message)
+        self.results_container.setCurrentIndex(1)
 
     def rebuild_grid(self):
         while self.grid_layout.count():
@@ -615,7 +799,7 @@ class WallppyGUI(QMainWindow):
         for i, wp in enumerate(self.wallpapers):
             row = i // self.columns
             col = i % self.columns
-            widget = WallpaperWidget(wp)
+            widget = WallpaperWidget(wp, self.download_folder)  # <-- pass download_folder
             widget.download_triggered.connect(self.download_wallpaper)
             self.grid_layout.addWidget(widget, row, col)
 
@@ -628,7 +812,7 @@ class WallppyGUI(QMainWindow):
             global_index = start_index + i
             row = global_index // self.columns
             col = global_index % self.columns
-            widget = WallpaperWidget(wp)
+            widget = WallpaperWidget(wp, self.download_folder)  # <-- pass download_folder
             widget.download_triggered.connect(self.download_wallpaper)
             self.grid_layout.addWidget(widget, row, col)
 
@@ -640,7 +824,7 @@ class WallppyGUI(QMainWindow):
         self.download_progress.setVisible(True)
         self.download_progress.setValue(0)
 
-        self.dl_worker = DownloadWorker(wallpaper_data)
+        self.dl_worker = DownloadWorker(wallpaper_data, self.download_folder)  # <-- pass download_folder
         self.dl_worker.finished.connect(self.on_download_finished)
         self.dl_worker.progress.connect(self.download_progress.setValue)
         self.dl_worker.start()
@@ -650,7 +834,7 @@ class WallppyGUI(QMainWindow):
         self.download_progress.setVisible(False)
         if success:
             timestamp = datetime.now().strftime("%H:%M:%S")
-            msg = f"[SUCCESS] Downloaded: {filename}  →  {DOWNLOAD_FOLDER}  ({timestamp})"
+            msg = f"Downloaded: {filename}  →  {self.download_folder}  ({timestamp})"
             self.status_bar.showMessage(msg)
 
             for i in range(self.grid_layout.count()):
@@ -660,7 +844,7 @@ class WallppyGUI(QMainWindow):
                         widget.update_downloaded_status()
                         break
         else:
-            self.status_bar.showMessage(f"[FAIL] Download failed: {filename}")
+            self.status_bar.showMessage(f"Download failed: {filename}")
 
 # =============================================================================
 # Entry Point
