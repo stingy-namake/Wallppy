@@ -9,6 +9,8 @@ import sys
 import os
 import requests
 import random
+import json
+from pathlib import Path
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -18,8 +20,6 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
-import json
-from pathlib import Path
 
 # =============================================================================
 # Configuration
@@ -29,10 +29,8 @@ DEFAULT_DOWNLOAD_FOLDER = "./wallpapers"
 THUMB_SIZE = QSize(280, 158)  # 16:9
 THUMB_PADDING = 12
 
-if not os.path.exists(DEFAULT_DOWNLOAD_FOLDER):
-    os.makedirs(DEFAULT_DOWNLOAD_FOLDER)
+os.makedirs(DEFAULT_DOWNLOAD_FOLDER, exist_ok=True)
 
-# Anime-themed no-results messages
 NO_RESULTS_MESSAGES = [
     "Nothing here... Maybe it's in another world?",
     "This search result is a lie.",
@@ -48,7 +46,7 @@ NO_RESULTS_MESSAGES = [
 # Worker Threads
 # =============================================================================
 class SearchWorker(QThread):
-    finished = pyqtSignal(list, int, int)  # wallpapers, page, total_pages
+    finished = pyqtSignal(list, int, int)
     error = pyqtSignal(str)
 
     def __init__(self, query, page=1, category="111", purity="100"):
@@ -81,7 +79,7 @@ class SearchWorker(QThread):
             self.error.emit(str(e))
 
 class DownloadWorker(QThread):
-    finished = pyqtSignal(bool, str, str, str)  # success, filepath, filename, wall_id
+    finished = pyqtSignal(bool, str, str, str)
     progress = pyqtSignal(int)
 
     def __init__(self, wallpaper_data, download_folder):
@@ -106,7 +104,6 @@ class DownloadWorker(QThread):
 
         filename = f"wallppy-{wall_id}.{ext}"
         filepath = os.path.join(self.download_folder, filename)
-
         os.makedirs(self.download_folder, exist_ok=True)
 
         if os.path.exists(filepath):
@@ -206,7 +203,6 @@ class WallpaperWidget(QFrame):
         self.thumb_label.double_clicked.connect(self.emit_download)
         layout.addWidget(self.thumb_label)
 
-        # Checkmark overlay
         self.checkmark_label = QLabel(self.thumb_label)
         self.checkmark_label.setAlignment(Qt.AlignCenter)
         self.checkmark_label.setStyleSheet("""
@@ -223,7 +219,6 @@ class WallpaperWidget(QFrame):
         self.checkmark_label.hide()
         self.checkmark_label.raise_()
 
-        # Resolution
         info_layout = QHBoxLayout()
         info_layout.setContentsMargins(0, 0, 0, 0)
         res = self.data.get("resolution", "?x?")
@@ -298,10 +293,8 @@ class WallppyGUI(QMainWindow):
         self.setMinimumSize(682, 500)
         self.resize(1100, 700)
 
-        # Load persistent settings
         self.load_settings()
 
-        # State
         self.current_query = ""
         self.current_page = 1
         self.total_pages = 1
@@ -314,6 +307,63 @@ class WallppyGUI(QMainWindow):
         self.apply_dark_theme()
         self.setup_status_bar()
 
+    def get_config_path(self):
+        config_dir = Path.home() / ".config" / "wallppy"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir / "settings.json"
+
+    def load_settings(self):
+        config_path = self.get_config_path()
+        defaults = {
+            "download_folder": DEFAULT_DOWNLOAD_FOLDER,
+            "categories": {"general": True, "anime": True, "people": True},
+            "purity": {"sfw": True, "sketchy": False}
+        }
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    settings = json.load(f)
+                    self.download_folder = settings.get("download_folder", defaults["download_folder"])
+                    self.cat_settings = settings.get("categories", defaults["categories"])
+                    self.purity_settings = settings.get("purity", defaults["purity"])
+            except Exception:
+                self.download_folder = defaults["download_folder"]
+                self.cat_settings = defaults["categories"]
+                self.purity_settings = defaults["purity"]
+        else:
+            self.download_folder = defaults["download_folder"]
+            self.cat_settings = defaults["categories"]
+            self.purity_settings = defaults["purity"]
+        os.makedirs(self.download_folder, exist_ok=True)
+
+    def save_settings(self):
+        config_path = self.get_config_path()
+        settings = {
+            "download_folder": self.download_folder,
+            "categories": {
+                "general": self.cat_general.isChecked(),
+                "anime": self.cat_anime.isChecked(),
+                "people": self.cat_people.isChecked()
+            },
+            "purity": {
+                "sfw": self.purity_sfw.isChecked(),
+                "sketchy": self.purity_sketchy.isChecked()
+            }
+        }
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(settings, f, indent=2)
+        except Exception:
+            pass
+
+    def keyPressEvent(self, event):
+        if (self.stacked.currentIndex() == 0 and 
+            event.key() == Qt.Key_Return and 
+            event.modifiers() == Qt.NoModifier):
+            self.perform_search_from_landing()
+        else:
+            super().keyPressEvent(event)
+
     def init_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -324,7 +374,7 @@ class WallppyGUI(QMainWindow):
         self.stacked = QStackedWidget()
         main_layout.addWidget(self.stacked)
 
-        # ===== Page 0: Landing page =====
+        # ===== Landing page =====
         self.landing_page = QWidget()
         landing_layout = QVBoxLayout(self.landing_page)
         landing_layout.setAlignment(Qt.AlignCenter)
@@ -373,11 +423,17 @@ class WallppyGUI(QMainWindow):
         cat_layout.setAlignment(Qt.AlignCenter)
 
         self.cat_general = QCheckBox("General")
-        self.cat_general.setChecked(True)
         self.cat_anime = QCheckBox("Anime")
-        self.cat_anime.setChecked(True)
         self.cat_people = QCheckBox("People")
-        self.cat_people.setChecked(True)
+
+        # Set from loaded settings
+        self.cat_general.setChecked(self.cat_settings.get("general", True))
+        self.cat_anime.setChecked(self.cat_settings.get("anime", True))
+        self.cat_people.setChecked(self.cat_settings.get("people", True))
+
+        self.cat_general.stateChanged.connect(self.save_settings)
+        self.cat_anime.stateChanged.connect(self.save_settings)
+        self.cat_people.stateChanged.connect(self.save_settings)
 
         cat_layout.addWidget(self.cat_general)
         cat_layout.addWidget(self.cat_anime)
@@ -393,9 +449,13 @@ class WallppyGUI(QMainWindow):
         purity_layout.setAlignment(Qt.AlignCenter)
 
         self.purity_sfw = QCheckBox("SFW")
-        self.purity_sfw.setChecked(True)
         self.purity_sketchy = QCheckBox("Sketchy")
-        self.purity_sketchy.setChecked(False)
+
+        self.purity_sfw.setChecked(self.purity_settings.get("sfw", True))
+        self.purity_sketchy.setChecked(self.purity_settings.get("sketchy", False))
+
+        self.purity_sfw.stateChanged.connect(self.save_settings)
+        self.purity_sketchy.stateChanged.connect(self.save_settings)
 
         purity_layout.addWidget(self.purity_sfw)
         purity_layout.addWidget(self.purity_sketchy)
@@ -423,17 +483,15 @@ class WallppyGUI(QMainWindow):
         landing_layout.addWidget(search_container)
         self.stacked.addWidget(self.landing_page)
 
-        # ===== Page 1: Results page =====
+        # ===== Results page =====
         self.results_page = QWidget()
         results_layout = QVBoxLayout(self.results_page)
         results_layout.setContentsMargins(12, 12, 12, 12)
         results_layout.setSpacing(12)
 
-        # Top bar with home button
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
 
-        # Home button
         self.home_btn = QPushButton("⌂")
         self.home_btn.setToolTip("Back to home")
         self.home_btn.setFixedSize(36, 36)
@@ -480,14 +538,12 @@ class WallppyGUI(QMainWindow):
             }
         """)
         top_bar.addWidget(self.results_search_btn)
-
         top_bar.addStretch()
         results_layout.addLayout(top_bar)
 
         self.results_container = QStackedWidget()
         results_layout.addWidget(self.results_container)
 
-        # Grid page
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -503,7 +559,6 @@ class WallppyGUI(QMainWindow):
         self.scroll_area.setWidget(self.grid_widget)
         self.results_container.addWidget(self.scroll_area)
 
-        # No results page
         self.no_results_widget = QWidget()
         no_results_layout = QVBoxLayout(self.no_results_widget)
         no_results_layout.setAlignment(Qt.AlignCenter)
@@ -520,14 +575,12 @@ class WallppyGUI(QMainWindow):
         results_layout.addWidget(self.loading_progress)
 
         self.stacked.addWidget(self.results_page)
-
         self.stacked.setCurrentIndex(0)
 
         self.scroll_area.viewport().installEventFilter(self)
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
 
     def go_home(self):
-        """Return to landing page, preserving search text."""
         self.stacked.setCurrentIndex(0)
         self.landing_search_edit.setText(self.results_search_edit.text())
 
@@ -537,41 +590,7 @@ class WallppyGUI(QMainWindow):
             self.download_folder = folder
             self.dir_edit.setText(folder)
             self.save_settings()
-            # Ensure the folder exists
             os.makedirs(self.download_folder, exist_ok=True)
-
-    def get_config_path(self):
-        """Return the path to the config file."""
-        config_dir = Path.home() / ".config" / "wallppy"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir / "settings.json"
-
-    def load_settings(self):
-        """Load saved settings from config file."""
-        config_path = self.get_config_path()
-        if config_path.exists():
-            try:
-                with open(config_path, 'r') as f:
-                    settings = json.load(f)
-                    self.download_folder = settings.get("download_folder", DEFAULT_DOWNLOAD_FOLDER)
-                    # Ensure folder exists
-                    os.makedirs(self.download_folder, exist_ok=True)
-            except Exception:
-                self.download_folder = DEFAULT_DOWNLOAD_FOLDER
-        else:
-            self.download_folder = DEFAULT_DOWNLOAD_FOLDER
-
-    def save_settings(self):
-        """Save current settings to config file."""
-        config_path = self.get_config_path()
-        settings = {
-            "download_folder": self.download_folder
-        }
-        try:
-            with open(config_path, 'w') as f:
-                json.dump(settings, f, indent=2)
-        except Exception:
-            pass  # Silently fail if we can't save
 
     def get_category_string(self):
         cat = ""
@@ -754,9 +773,7 @@ class WallppyGUI(QMainWindow):
         self.workers.append(self.worker)
 
     def load_next_page(self):
-        if self.is_loading:
-            return
-        if self.current_page >= self.total_pages:
+        if self.is_loading or self.current_page >= self.total_pages:
             return
 
         self.is_loading = True
@@ -856,7 +873,7 @@ class WallppyGUI(QMainWindow):
         self.download_progress.setVisible(False)
         if success:
             timestamp = datetime.now().strftime("%H:%M:%S")
-            msg = f"[OK] Downloaded: {filename}  →  {self.download_folder}  ({timestamp})"
+            msg = f"✅ Downloaded: {filename}  →  {self.download_folder}  ({timestamp})"
             self.status_bar.showMessage(msg)
 
             for i in range(self.grid_layout.count()):
@@ -866,7 +883,7 @@ class WallppyGUI(QMainWindow):
                         widget.update_downloaded_status()
                         break
         else:
-            self.status_bar.showMessage(f"[X] Download failed: {filename}")
+            self.status_bar.showMessage(f"❌ Download failed: {filename}")
 
 # =============================================================================
 # Entry Point
