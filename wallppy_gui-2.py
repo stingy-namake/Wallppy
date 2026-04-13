@@ -12,7 +12,8 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QGridLayout,
-    QFrame, QMessageBox, QProgressBar, QSizePolicy, QStatusBar
+    QFrame, QMessageBox, QProgressBar, QSizePolicy, QStatusBar,
+    QStackedWidget
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
@@ -22,7 +23,7 @@ from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
 # =============================================================================
 API_URL = "https://wallhaven.cc/api/v1/search"
 DOWNLOAD_FOLDER = "./wallpapers"
-THUMB_SIZE = QSize(240, 135)  # 16:9
+THUMB_SIZE = QSize(280, 158)  # 16:9, ~15% larger than before
 THUMB_PADDING = 12
 
 if not os.path.exists(DOWNLOAD_FOLDER):
@@ -141,7 +142,7 @@ class DoubleClickableLabel(QLabel):
         super().mouseDoubleClickEvent(event)
 
 # =============================================================================
-# Wallpaper Item Widget (checkmark for downloaded)
+# Wallpaper Item Widget
 # =============================================================================
 class WallpaperWidget(QFrame):
     download_triggered = pyqtSignal(dict)
@@ -169,7 +170,6 @@ class WallpaperWidget(QFrame):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)
 
-        # Double‑clickable thumbnail
         self.thumb_label = DoubleClickableLabel()
         self.thumb_label.setFixedSize(THUMB_SIZE)
         self.thumb_label.setAlignment(Qt.AlignCenter)
@@ -204,7 +204,7 @@ class WallpaperWidget(QFrame):
         self.checkmark_label.hide()
         self.checkmark_label.raise_()
 
-        # Resolution label
+        # Resolution
         info_layout = QHBoxLayout()
         info_layout.setContentsMargins(0, 0, 0, 0)
         res = self.data.get("resolution", "?x?")
@@ -215,6 +215,7 @@ class WallpaperWidget(QFrame):
         layout.addLayout(info_layout)
 
         self.setLayout(layout)
+        # Adjust widget size to accommodate larger thumbnail
         self.setFixedSize(THUMB_SIZE.width() + 20, THUMB_SIZE.height() + 45)
 
     def showEvent(self, event):
@@ -270,7 +271,7 @@ class WallpaperWidget(QFrame):
         self.download_triggered.emit(self.data)
 
 # =============================================================================
-# Main Window with Infinite Scrolling
+# Main Window with Stacked Layout (Landing Page + Results)
 # =============================================================================
 class WallhavenGUI(QMainWindow):
     def __init__(self):
@@ -290,33 +291,73 @@ class WallhavenGUI(QMainWindow):
 
         self.init_ui()
         self.apply_dark_theme()
-        self.scroll_area.viewport().installEventFilter(self)
-        self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
-
-    def eventFilter(self, obj, event):
-        if obj == self.scroll_area.viewport() and event.type() == event.Resize:
-            if self.update_columns_from_width() and self.wallpapers:
-                self.rebuild_grid()
-        return super().eventFilter(obj, event)
-
-    def update_columns_from_width(self):
-        viewport_width = self.scroll_area.viewport().width()
-        thumb_width_total = THUMB_SIZE.width() + 20 + THUMB_PADDING
-        if thumb_width_total > 0:
-            new_cols = max(1, viewport_width // thumb_width_total)
-            if new_cols != self.columns:
-                self.columns = new_cols
-                return True
-        return False
+        self.setup_status_bar()
 
     def init_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Top Bar (search only)
+        # Stacked widget to switch between landing page and results
+        self.stacked = QStackedWidget()
+        main_layout.addWidget(self.stacked)
+
+        # ===== Page 0: Landing page (centered search) =====
+        self.landing_page = QWidget()
+        landing_layout = QVBoxLayout(self.landing_page)
+        landing_layout.setAlignment(Qt.AlignCenter)
+        landing_layout.setSpacing(20)
+
+        # Large search container
+        search_container = QWidget()
+        search_container.setFixedWidth(500)
+        container_layout = QVBoxLayout(search_container)
+        container_layout.setSpacing(10)
+
+        # App title / logo
+        title = QLabel("Wallhaven")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size: 36px; font-weight: bold; color: #0078d7;")
+        container_layout.addWidget(title)
+
+        # Search input (larger)
+        self.landing_search_edit = QLineEdit()
+        self.landing_search_edit.setPlaceholderText("Search wallpapers...")
+        self.landing_search_edit.setMinimumHeight(50)
+        self.landing_search_edit.setStyleSheet("""
+            QLineEdit {
+                font-size: 16px;
+                padding: 12px;
+                border-radius: 25px;
+                background-color: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                color: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.landing_search_edit.returnPressed.connect(self.perform_search_from_landing)
+        container_layout.addWidget(self.landing_search_edit)
+
+        # Subtle hint (replaces the Search button)
+        hint = QLabel("Press Enter to search")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet("color: #777; font-size: 12px; margin-top: 5px;")
+        container_layout.addWidget(hint)
+
+        landing_layout.addWidget(search_container)
+        self.stacked.addWidget(self.landing_page)
+
+        # ===== Page 1: Results page (with top search bar and grid) =====
+        self.results_page = QWidget()
+        results_layout = QVBoxLayout(self.results_page)
+        results_layout.setContentsMargins(12, 12, 12, 12)
+        results_layout.setSpacing(12)
+
+        # Top bar (compact search)
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
 
@@ -325,21 +366,20 @@ class WallhavenGUI(QMainWindow):
         search_icon = QLabel()
         search_icon.setPixmap(QIcon.fromTheme("system-search").pixmap(16,16))
         search_layout.addWidget(search_icon)
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search wallpapers...")
-        self.search_edit.returnPressed.connect(self.perform_search)
-        search_layout.addWidget(self.search_edit)
+        self.results_search_edit = QLineEdit()
+        self.results_search_edit.setPlaceholderText("Search wallpapers...")
+        self.results_search_edit.returnPressed.connect(self.perform_search_from_results)
+        search_layout.addWidget(self.results_search_edit)
         top_bar.addLayout(search_layout, 3)
 
-        self.search_btn = QPushButton("Search")
-        self.search_btn.clicked.connect(self.perform_search)
-        top_bar.addWidget(self.search_btn)
+        self.results_search_btn = QPushButton("Search")
+        self.results_search_btn.clicked.connect(self.perform_search_from_results)
+        top_bar.addWidget(self.results_search_btn)
 
         top_bar.addStretch()
+        results_layout.addLayout(top_bar)
 
-        main_layout.addLayout(top_bar)
-
-        # Scroll Area
+        # Scroll Area for grid
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -353,19 +393,28 @@ class WallhavenGUI(QMainWindow):
         self.grid_layout.setContentsMargins(4, 4, 4, 4)
 
         self.scroll_area.setWidget(self.grid_widget)
-        main_layout.addWidget(self.scroll_area)
+        results_layout.addWidget(self.scroll_area)
 
-        # Bottom loading indicator (for page loads)
+        # Loading indicator for infinite scroll
         self.loading_progress = QProgressBar()
         self.loading_progress.setVisible(False)
         self.loading_progress.setRange(0, 0)
-        main_layout.addWidget(self.loading_progress)
+        results_layout.addWidget(self.loading_progress)
 
-        # Setup status bar
+        self.stacked.addWidget(self.results_page)
+
+        # Start on landing page
+        self.stacked.setCurrentIndex(0)
+
+        # Install event filter for resize on scroll area viewport
+        self.scroll_area.viewport().installEventFilter(self)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
+
+    def setup_status_bar(self):
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
 
-        # Tiny download progress bar in status bar (left side)
+        # Tiny download progress bar
         self.download_progress = QProgressBar()
         self.download_progress.setFixedWidth(120)
         self.download_progress.setFixedHeight(12)
@@ -385,7 +434,6 @@ class WallhavenGUI(QMainWindow):
         """)
         self.status_bar.addPermanentWidget(self.download_progress)
 
-        # Permanent tip on the right
         tip_label = QLabel("🖱️ Double‑click thumbnail to download")
         tip_label.setStyleSheet("color: #aaa; padding-right: 8px;")
         self.status_bar.addPermanentWidget(tip_label)
@@ -447,8 +495,24 @@ class WallhavenGUI(QMainWindow):
             }
         """)
 
+    def eventFilter(self, obj, event):
+        if obj == self.scroll_area.viewport() and event.type() == event.Resize:
+            if self.update_columns_from_width() and self.wallpapers:
+                self.rebuild_grid()
+        return super().eventFilter(obj, event)
+
+    def update_columns_from_width(self):
+        viewport_width = self.scroll_area.viewport().width()
+        thumb_width_total = THUMB_SIZE.width() + 20 + THUMB_PADDING
+        if thumb_width_total > 0:
+            new_cols = max(1, viewport_width // thumb_width_total)
+            if new_cols != self.columns:
+                self.columns = new_cols
+                return True
+        return False
+
     def on_scroll(self, value):
-        if self.is_loading:
+        if self.is_loading or self.stacked.currentIndex() != 1:
             return
         if self.current_page >= self.total_pages:
             return
@@ -457,12 +521,27 @@ class WallhavenGUI(QMainWindow):
         if scrollbar.maximum() - value < 200:
             self.load_next_page()
 
-    def perform_search(self):
-        query = self.search_edit.text().strip()
-        if not query:
-            QMessageBox.information(self, "Info", "Please enter a search term.")
-            return
-        self.current_query = query
+    # ===== Search Handlers =====
+    def perform_search_from_landing(self):
+        query = self.landing_search_edit.text().strip()
+        if query:
+            self.current_query = query
+            self.results_search_edit.setText(query)
+            self.start_search()
+            self.stacked.setCurrentIndex(1)
+
+    def perform_search_from_results(self):
+        query = self.results_search_edit.text().strip()
+        if query and query != self.current_query:
+            self.current_query = query
+            self.landing_search_edit.setText(query)
+            self.start_search()
+        elif query:
+            # Same query, just re-run search (page 1)
+            self.current_page = 1
+            self.start_search()
+
+    def start_search(self):
         self.current_page = 1
         self.wallpapers = []
         self.total_pages = 1
@@ -514,6 +593,10 @@ class WallhavenGUI(QMainWindow):
         self.loading_progress.setVisible(False)
         QMessageBox.critical(self, "Search Error", error_msg)
         self.status_bar.showMessage("Search failed")
+        # If on landing page and error, stay there; if on results and no results, could go back but we'll just show empty grid
+        if self.stacked.currentIndex() == 1 and not self.wallpapers:
+            # Optionally switch back to landing? We'll keep results page with empty grid.
+            pass
 
     def rebuild_grid(self):
         while self.grid_layout.count():
