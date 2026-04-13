@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Wallhaven GUI - Modern, minimal wallpaper browser with infinite scrolling.
+wallppy - Modern, minimal wallpaper browser with infinite scrolling.
 Double-click any thumbnail to download.
 Downloaded wallpapers show a green checkmark.
 """
@@ -23,7 +23,7 @@ from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QMouseEvent
 # =============================================================================
 API_URL = "https://wallhaven.cc/api/v1/search"
 DOWNLOAD_FOLDER = "./wallpapers"
-THUMB_SIZE = QSize(280, 158)  # 16:9, ~15% larger than before
+THUMB_SIZE = QSize(280, 158)  # 16:9
 THUMB_PADDING = 12
 
 if not os.path.exists(DOWNLOAD_FOLDER):
@@ -88,7 +88,7 @@ class DownloadWorker(QThread):
         else:
             ext = "jpg"
 
-        filename = f"wallhaven-{wall_id}.{ext}"
+        filename = f"wallppy-{wall_id}.{ext}"
         filepath = os.path.join(DOWNLOAD_FOLDER, filename)
 
         if os.path.exists(filepath):
@@ -179,7 +179,7 @@ class WallpaperWidget(QFrame):
                 border-radius: 6px;
             }
             QLabel:hover {
-                border: 2px solid #0078d7;
+                border: 2px solid #1E6FF0;
             }
         """)
         self.thumb_label.setScaledContents(True)
@@ -215,7 +215,6 @@ class WallpaperWidget(QFrame):
         layout.addLayout(info_layout)
 
         self.setLayout(layout)
-        # Adjust widget size to accommodate larger thumbnail
         self.setFixedSize(THUMB_SIZE.width() + 20, THUMB_SIZE.height() + 45)
 
     def showEvent(self, event):
@@ -242,7 +241,7 @@ class WallpaperWidget(QFrame):
             ext = "png"
         else:
             ext = "jpg"
-        filename = f"wallhaven-{wall_id}.{ext}"
+        filename = f"wallppy-{wall_id}.{ext}"
         filepath = os.path.join(DOWNLOAD_FOLDER, filename)
         if os.path.exists(filepath):
             self.checkmark_label.show()
@@ -273,11 +272,11 @@ class WallpaperWidget(QFrame):
 # =============================================================================
 # Main Window with Stacked Layout (Landing Page + Results)
 # =============================================================================
-class WallhavenGUI(QMainWindow):
+class WallppyGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Wallhaven Browser")
-        self.setMinimumSize(600, 400)
+        self.setWindowTitle("wallppy")
+        self.setMinimumSize(682, 400)  # ~5% wider than before
         self.resize(1100, 700)
 
         # State
@@ -300,29 +299,28 @@ class WallhavenGUI(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Stacked widget to switch between landing page and results
+        # Stacked widget
         self.stacked = QStackedWidget()
         main_layout.addWidget(self.stacked)
 
-        # ===== Page 0: Landing page (centered search) =====
+        # Page 0: Landing page (centered search)
         self.landing_page = QWidget()
         landing_layout = QVBoxLayout(self.landing_page)
         landing_layout.setAlignment(Qt.AlignCenter)
         landing_layout.setSpacing(20)
 
-        # Large search container
         search_container = QWidget()
         search_container.setFixedWidth(500)
         container_layout = QVBoxLayout(search_container)
         container_layout.setSpacing(10)
 
-        # App title / logo
-        title = QLabel("Wallhaven")
+        # Title
+        title = QLabel("wallppy")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 36px; font-weight: bold; color: #0078d7;")
+        title.setStyleSheet("font-size: 36px; font-weight: bold; color: #1E6FF0;")
         container_layout.addWidget(title)
 
-        # Search input (larger)
+        # Search input
         self.landing_search_edit = QLineEdit()
         self.landing_search_edit.setPlaceholderText("Search wallpapers...")
         self.landing_search_edit.setMinimumHeight(50)
@@ -336,13 +334,13 @@ class WallhavenGUI(QMainWindow):
                 color: white;
             }
             QLineEdit:focus {
-                border: 1px solid #0078d7;
+                border: 1px solid #1E6FF0;
             }
         """)
         self.landing_search_edit.returnPressed.connect(self.perform_search_from_landing)
         container_layout.addWidget(self.landing_search_edit)
 
-        # Subtle hint (replaces the Search button)
+        # Hint
         hint = QLabel("Press Enter to search")
         hint.setAlignment(Qt.AlignCenter)
         hint.setStyleSheet("color: #777; font-size: 12px; margin-top: 5px;")
@@ -351,13 +349,13 @@ class WallhavenGUI(QMainWindow):
         landing_layout.addWidget(search_container)
         self.stacked.addWidget(self.landing_page)
 
-        # ===== Page 1: Results page (with top search bar and grid) =====
+        # Page 1: Results page
         self.results_page = QWidget()
         results_layout = QVBoxLayout(self.results_page)
         results_layout.setContentsMargins(12, 12, 12, 12)
         results_layout.setSpacing(12)
 
-        # Top bar (compact search)
+        # Top bar
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
 
@@ -374,12 +372,26 @@ class WallhavenGUI(QMainWindow):
 
         self.results_search_btn = QPushButton("Search")
         self.results_search_btn.clicked.connect(self.perform_search_from_results)
+        self.results_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1E6FF0;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #3D82F5;
+            }
+            QPushButton:pressed {
+                background-color: #1558C4;
+            }
+        """)
         top_bar.addWidget(self.results_search_btn)
 
         top_bar.addStretch()
         results_layout.addLayout(top_bar)
 
-        # Scroll Area for grid
+        # Scroll Area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -395,7 +407,7 @@ class WallhavenGUI(QMainWindow):
         self.scroll_area.setWidget(self.grid_widget)
         results_layout.addWidget(self.scroll_area)
 
-        # Loading indicator for infinite scroll
+        # Loading indicator
         self.loading_progress = QProgressBar()
         self.loading_progress.setVisible(False)
         self.loading_progress.setRange(0, 0)
@@ -403,10 +415,8 @@ class WallhavenGUI(QMainWindow):
 
         self.stacked.addWidget(self.results_page)
 
-        # Start on landing page
         self.stacked.setCurrentIndex(0)
 
-        # Install event filter for resize on scroll area viewport
         self.scroll_area.viewport().installEventFilter(self)
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
 
@@ -414,7 +424,6 @@ class WallhavenGUI(QMainWindow):
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
 
-        # Tiny download progress bar
         self.download_progress = QProgressBar()
         self.download_progress.setFixedWidth(120)
         self.download_progress.setFixedHeight(12)
@@ -428,7 +437,7 @@ class WallhavenGUI(QMainWindow):
                 text-align: center;
             }
             QProgressBar::chunk {
-                background-color: #0078d7;
+                background-color: #1E6FF0;
                 border-radius: 2px;
             }
         """)
@@ -450,7 +459,7 @@ class WallhavenGUI(QMainWindow):
         dark_palette.setColor(QPalette.Button, QColor(60, 60, 60))
         dark_palette.setColor(QPalette.ButtonText, Qt.white)
         dark_palette.setColor(QPalette.BrightText, Qt.red)
-        dark_palette.setColor(QPalette.Highlight, QColor(0, 120, 215))
+        dark_palette.setColor(QPalette.Highlight, QColor(30, 111, 240))
         dark_palette.setColor(QPalette.HighlightedText, Qt.white)
         QApplication.setPalette(dark_palette)
 
@@ -521,7 +530,6 @@ class WallhavenGUI(QMainWindow):
         if scrollbar.maximum() - value < 200:
             self.load_next_page()
 
-    # ===== Search Handlers =====
     def perform_search_from_landing(self):
         query = self.landing_search_edit.text().strip()
         if query:
@@ -537,7 +545,6 @@ class WallhavenGUI(QMainWindow):
             self.landing_search_edit.setText(query)
             self.start_search()
         elif query:
-            # Same query, just re-run search (page 1)
             self.current_page = 1
             self.start_search()
 
@@ -593,10 +600,6 @@ class WallhavenGUI(QMainWindow):
         self.loading_progress.setVisible(False)
         QMessageBox.critical(self, "Search Error", error_msg)
         self.status_bar.showMessage("Search failed")
-        # If on landing page and error, stay there; if on results and no results, could go back but we'll just show empty grid
-        if self.stacked.currentIndex() == 1 and not self.wallpapers:
-            # Optionally switch back to landing? We'll keep results page with empty grid.
-            pass
 
     def rebuild_grid(self):
         while self.grid_layout.count():
@@ -647,7 +650,7 @@ class WallhavenGUI(QMainWindow):
         self.download_progress.setVisible(False)
         if success:
             timestamp = datetime.now().strftime("%H:%M:%S")
-            msg = f"✅ Downloaded: {filename}  →  {DOWNLOAD_FOLDER}  ({timestamp})"
+            msg = f"[SUCCESS] Downloaded: {filename}  →  {DOWNLOAD_FOLDER}  ({timestamp})"
             self.status_bar.showMessage(msg)
 
             for i in range(self.grid_layout.count()):
@@ -657,7 +660,7 @@ class WallhavenGUI(QMainWindow):
                         widget.update_downloaded_status()
                         break
         else:
-            self.status_bar.showMessage(f"❌ Download failed: {filename}")
+            self.status_bar.showMessage(f"[FAIL] Download failed: {filename}")
 
 # =============================================================================
 # Entry Point
@@ -665,6 +668,6 @@ class WallhavenGUI(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon.fromTheme("wallpaper"))
-    window = WallhavenGUI()
+    window = WallppyGUI()
     window.show()
     sys.exit(app.exec_())
