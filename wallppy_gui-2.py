@@ -65,7 +65,7 @@ class SearchWorker(QThread):
             self.error.emit(str(e))
 
 class DownloadWorker(QThread):
-    finished = pyqtSignal(bool, str, str)  # success, filepath, filename
+    finished = pyqtSignal(bool, str, str, str)  # success, filepath, filename, wall_id
     progress = pyqtSignal(int)
 
     def __init__(self, wallpaper_data):
@@ -77,7 +77,7 @@ class DownloadWorker(QThread):
         wall_id = self.data.get("id")
         file_type = self.data.get("file_type", "image/jpeg")
         if not image_url:
-            self.finished.emit(False, "", "No image URL")
+            self.finished.emit(False, "", "No image URL", wall_id)
             return
 
         if "jpeg" in file_type or "jpg" in file_type:
@@ -91,7 +91,7 @@ class DownloadWorker(QThread):
         filepath = os.path.join(DOWNLOAD_FOLDER, filename)
 
         if os.path.exists(filepath):
-            self.finished.emit(True, filepath, filename)
+            self.finished.emit(True, filepath, filename, wall_id)
             return
 
         try:
@@ -106,9 +106,9 @@ class DownloadWorker(QThread):
                         downloaded += len(chunk)
                         if total_size:
                             self.progress.emit(int(downloaded * 100 / total_size))
-            self.finished.emit(True, filepath, filename)
+            self.finished.emit(True, filepath, filename, wall_id)
         except Exception as e:
-            self.finished.emit(False, "", str(e))
+            self.finished.emit(False, "", str(e), wall_id)
 
 class ThumbnailLoader(QThread):
     loaded = pyqtSignal(QPixmap)
@@ -272,7 +272,7 @@ class WallpaperWidget(QFrame):
 
     def emit_download(self):
         self.download_triggered.emit(self.data)
-        
+
 # =============================================================================
 # Main Window
 # =============================================================================
@@ -520,14 +520,20 @@ class WallhavenGUI(QMainWindow):
         self.dl_worker.start()
         self.workers.append(self.dl_worker)
 
-    def on_download_finished(self, success, filepath, filename):
+    def on_download_finished(self, success, filepath, filename, wall_id):
         self.progress.setVisible(False)
         if success:
             timestamp = datetime.now().strftime("%H:%M:%S")
             msg = f"✅ Downloaded: {filename}  →  {DOWNLOAD_FOLDER}  ({timestamp})"
             self.statusBar().showMessage(msg)
-            # If we wanted to update checkmarks live, we could iterate over widgets,
-            # but the simplest is to let the user see it on next search/navigation.
+
+            # Find the widget for this wallpaper and update its checkmark
+            for i in range(self.grid_layout.count()):
+                widget = self.grid_layout.itemAt(i).widget()
+                if isinstance(widget, WallpaperWidget):
+                    if widget.data.get("id") == wall_id:
+                        widget.update_downloaded_status()
+                        break
         else:
             self.statusBar().showMessage(f"❌ Download failed: {filename}")
 
