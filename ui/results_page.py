@@ -219,7 +219,6 @@ class ImageOverlay(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignCenter)
 
-        # ===== MODERN LOADING CARD =====
         self.loading_card = QFrame()
         self.loading_card.setFixedSize(220, 120)
         self.loading_card.setStyleSheet("""
@@ -261,14 +260,12 @@ class ImageOverlay(QWidget):
 
         layout.addWidget(self.loading_card, alignment=Qt.AlignCenter)
 
-        # Image display
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setScaledContents(False)
         layout.addWidget(self.image_label, alignment=Qt.AlignCenter)
         self.image_label.hide()
 
-        # Hint
         self.hint = QLabel("Press ESC or click to close")
         self.hint.setAlignment(Qt.AlignCenter)
         self.hint.setStyleSheet("""
@@ -523,7 +520,7 @@ class ResultsPage(QWidget):
         no_results_layout.addWidget(self.no_results_label)
         self.results_container.addWidget(self.no_results_widget)
 
-        # ===== MODERN SLEEK LOADING BAR =====
+        # Loading indicator
         self.loading_progress = QProgressBar()
         self.loading_progress.setVisible(False)
         self.loading_progress.setRange(0, 0)
@@ -756,6 +753,7 @@ class ResultsPage(QWidget):
             widget.download_folder = self.settings.download_folder
             widget.res_label.setText(self.extension.get_resolution(wp_data))
             widget.update_downloaded_status()
+            widget.update_active_status()
             widget.load_thumbnail()
         else:
             widget = WallpaperWidget(self.extension, wp_data, self.settings.download_folder)
@@ -821,6 +819,13 @@ class ResultsPage(QWidget):
                 main_win.status_bar.showMessage("Wallpaper set successfully!")
             else:
                 main_win.status_bar.showMessage(f"Failed to set wallpaper: {message}")
+        
+        # Refresh active indicator on ALL visible widgets so only the new one shows the star
+        if success:
+            for i in range(self.grid_layout.count()):
+                widget = self.grid_layout.itemAt(i).widget()
+                if isinstance(widget, WallpaperWidget):
+                    widget.update_active_status()
 
     def update_extension(self, new_extension: WallpaperExtension):
         self.extension = new_extension

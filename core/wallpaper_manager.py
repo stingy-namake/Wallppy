@@ -11,6 +11,7 @@ class WallpaperManager:
     """Cross-platform manager to set the desktop wallpaper."""
     
     _cache_dir = Path.home() / ".cache" / "wallppy"
+    _current_wallpaper_path = None
     
     @classmethod
     def _ensure_cache_dir(cls):
@@ -23,6 +24,16 @@ class WallpaperManager:
         stat = os.stat(source_path)
         cache_key = hashlib.md5(f"{source_path}:{stat.st_mtime}".encode()).hexdigest()
         return cls._cache_dir / f"{cache_key}.jpg"
+
+    @classmethod
+    def set_current_wallpaper(cls, path: str):
+        """Store the path of the currently active wallpaper."""
+        cls._current_wallpaper_path = os.path.abspath(path) if path else None
+
+    @classmethod
+    def get_current_wallpaper(cls):
+        """Return the path of the currently active wallpaper, or None."""
+        return cls._current_wallpaper_path
 
     @staticmethod
     def set_wallpaper(image_path):
@@ -121,16 +132,23 @@ class WallpaperSetterWorker(QThread):
             
             os.makedirs(self.download_folder, exist_ok=True)
             
+            # Check if already downloaded locally
             if os.path.exists(filepath):
                 success, message = WallpaperManager.set_wallpaper(filepath)
+                if success:
+                    WallpaperManager.set_current_wallpaper(filepath)
                 self.finished.emit(success, message, filepath)
                 return
             
+            # Check if it's already a local file (LocalExtension)
             if os.path.exists(image_url):
                 success, message = WallpaperManager.set_wallpaper(image_url)
+                if success:
+                    WallpaperManager.set_current_wallpaper(image_url)
                 self.finished.emit(success, message, image_url)
                 return
             
+            # Download from online source
             self.progress.emit(0)
             from core.workers import get_session
             session = get_session()
@@ -149,6 +167,8 @@ class WallpaperSetterWorker(QThread):
                             self.progress.emit(int(downloaded * 100 / total_size))
             
             success, message = WallpaperManager.set_wallpaper(filepath)
+            if success:
+                WallpaperManager.set_current_wallpaper(filepath)
             self.finished.emit(success, message, filepath)
             
         except Exception as e:

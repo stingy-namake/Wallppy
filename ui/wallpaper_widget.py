@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QPixmap
 from core.extension import WallpaperExtension
 from core.workers import ThumbnailLoader
-from core.wallpaper_manager import WallpaperSetterWorker
+from core.wallpaper_manager import WallpaperSetterWorker, WallpaperManager
 
 
 THUMB_SIZE = QSize(280, 158)
@@ -82,6 +82,29 @@ class WallpaperWidget(QFrame):
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(16)
 
+        # ===== ACTIVE WALLPAPER INDICATOR =====
+        self.active_indicator = QToolButton()
+        self.active_indicator.setText("★")
+        self.active_indicator.setToolTip("Current wallpaper")
+        self.active_indicator.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.active_indicator.setStyleSheet("""
+            QToolButton {
+                background-color: rgba(30, 111, 240, 0.85);
+                border-radius: 4px;
+                border: none;
+                color: white;
+                font-size: 12px;
+                padding-top: 7px;
+                padding-bottom: 7px;
+                text-align: center;
+                font-weight: bold;
+            }
+        """)
+        self.active_indicator.setFixedSize(36, 30)
+        self.active_indicator.hide()
+        bottom_layout.addWidget(self.active_indicator)
+
+        # Checkmark button (downloaded)
         self.checkmark_btn = QToolButton()
         self.checkmark_btn.setText("🗂")
         self.checkmark_btn.setToolTip("Downloaded")
@@ -175,9 +198,9 @@ class WallpaperWidget(QFrame):
         if not success:
             QMessageBox.warning(self, "Wallpaper Error", f"Failed to set wallpaper:\n{message}")
         
-        # FIX: Update checkmark if wallpaper was successfully downloaded/set
         if success:
             self.update_downloaded_status()
+            self.update_active_status()
         
         self._wallpaper_worker = None
 
@@ -188,6 +211,7 @@ class WallpaperWidget(QFrame):
     def showEvent(self, event):
         super().showEvent(event)
         self.update_downloaded_status()
+        self.update_active_status()
 
     def update_downloaded_status(self):
         wall_id = self.extension.get_wallpaper_id(self.data)
@@ -198,6 +222,26 @@ class WallpaperWidget(QFrame):
             self.checkmark_btn.show()
         else:
             self.checkmark_btn.hide()
+
+    def update_active_status(self):
+        """Show blue star if this wallpaper is the current desktop background."""
+        current = WallpaperManager.get_current_wallpaper()
+        if not current:
+            self.active_indicator.hide()
+            return
+
+        wall_id = self.extension.get_wallpaper_id(self.data)
+        ext = self.extension.get_file_extension(self.data)
+        downloaded = os.path.join(self.download_folder, f"wallppy-{wall_id}.{ext}")
+        direct = self.extension.get_download_url(self.data) or ""
+
+        current_abs = os.path.abspath(current)
+        if current_abs == os.path.abspath(downloaded):
+            self.active_indicator.show()
+        elif direct and current_abs == os.path.abspath(direct):
+            self.active_indicator.show()
+        else:
+            self.active_indicator.hide()
 
     def load_thumbnail(self):
         if self._loaded or not self.thumb_url:
@@ -218,6 +262,7 @@ class WallpaperWidget(QFrame):
             else:
                 self.thumb_label.setText("Invalid image")
             self.update_downloaded_status()
+            self.update_active_status()
             return
         
         self._thumb_loader = ThumbnailLoader(self.thumb_url)
@@ -233,6 +278,7 @@ class WallpaperWidget(QFrame):
         else:
             self.thumb_label.setText("Load failed")
         self.update_downloaded_status()
+        self.update_active_status()
 
     def emit_download(self):
         self.download_triggered.emit(self.data)
@@ -246,3 +292,4 @@ class WallpaperWidget(QFrame):
         self._loaded = False
         self.thumb_label.setPixmap(get_placeholder())
         self.checkmark_btn.hide()
+        self.active_indicator.hide()
