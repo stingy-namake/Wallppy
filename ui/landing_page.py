@@ -38,7 +38,6 @@ class LandingPage(QWidget):
         """)
         container_layout.addWidget(title)
 
-        # Source selector - more subtle
         src_layout = QHBoxLayout()
         src_layout.setSpacing(8)
         src_label = QLabel("Source")
@@ -70,7 +69,6 @@ class LandingPage(QWidget):
         src_layout.addStretch()
         container_layout.addLayout(src_layout)
 
-        # Search input - unified radius
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search wallpapers...")
         self.search_edit.setFixedHeight(44)
@@ -91,7 +89,6 @@ class LandingPage(QWidget):
         self.search_edit.returnPressed.connect(self.emit_search)
         container_layout.addWidget(self.search_edit)
 
-        # Hint and Explore row - better hierarchy
         hint_layout = QHBoxLayout()
         hint_layout.setSpacing(10)
         
@@ -101,7 +98,6 @@ class LandingPage(QWidget):
         hint_layout.addWidget(hint)
         hint_layout.addStretch()
         
-        # Explore as text link style instead of button
         self.explore_btn = QPushButton("or explore recent uploads →")
         self.explore_btn.setToolTip("Browse recent uploads")
         self.explore_btn.setCursor(Qt.PointingHandCursor)
@@ -122,7 +118,6 @@ class LandingPage(QWidget):
         
         container_layout.addLayout(hint_layout)
 
-        # Divider
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet("color: #333; max-height: 1px;")
@@ -131,7 +126,6 @@ class LandingPage(QWidget):
         container_layout.addWidget(divider)
         container_layout.addSpacing(8)
 
-        # Save to section - more compact
         dir_label = QLabel("Download Location")
         dir_label.setStyleSheet("color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;")
         container_layout.addWidget(dir_label)
@@ -178,18 +172,15 @@ class LandingPage(QWidget):
         
         layout.addWidget(container)
         
-        # Initialize search box state based on current selection
         self.on_extension_changed(self.ext_combo.currentText())
     
     def emit_explore(self):
-        """Emit signal for explore action (empty query)."""
         self.explore_requested.emit()
     
     def on_extension_changed(self, name: str):
-        self.settings.set_extension(os.name)
+        self.settings.set_extension(name)  # FIXED: was os.name
         self.extension_changed.emit(name)
         
-        # Gray out and block search box when using Local source
         if name == "Local":
             self.search_edit.setEnabled(False)
             self.search_edit.setPlaceholderText("Browsing local folder...")
@@ -222,7 +213,6 @@ class LandingPage(QWidget):
             """)
     
     def emit_search(self):
-        # Block search when disabled (Local source)
         if not self.search_edit.isEnabled():
             return
         query = self.search_edit.text().strip()

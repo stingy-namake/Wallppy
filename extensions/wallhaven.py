@@ -1,10 +1,12 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from typing import List, Dict, Any
 from core.extension import WallpaperExtension
 
 
 class WallhavenExtension(WallpaperExtension):
-    """Wallhaven.cc API implementation."""
+    """Wallhaven.cc API implementation with connection pooling."""
     
     def __init__(self, api_key: str = None):
         super().__init__()
@@ -12,11 +14,26 @@ class WallhavenExtension(WallpaperExtension):
         self.api_url = "https://wallhaven.cc/api/v1/search"
         self.api_key = api_key
         self._last_meta = {}
+        
+        # Setup connection pooling with retries
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(
+            pool_connections=5, 
+            pool_maxsize=10,
+            max_retries=retry_strategy
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
     
     def _get_headers(self) -> Dict[str, str]:
-        """Return headers required by Wallhaven API."""
         headers = {
-            "User-Agent": "wallppy/1.0 (https://github.com/yourrepo; your-email@example.com)"
+            "User-Agent": "wallppy/1.0 (https://github.com/stingy-namake/wallppy)"
         }
         if self.api_key:
             headers["X-API-Key"] = self.api_key
@@ -33,28 +50,24 @@ class WallhavenExtension(WallpaperExtension):
             "page": page,
         }
         
-        # Handle sorting
         sorting = kwargs.get("sorting", "date_added")
         params["sorting"] = sorting
         params["order"] = "desc"
         
-        # Handle toplist time range if sorting is toplist
         if sorting == "toplist":
             top_range = kwargs.get("top_range", "1M")
             params["topRange"] = top_range
         
-        # Handle resolution filters
         resolution = kwargs.get("resolution", "")
         if resolution:
             params["resolutions"] = resolution
         
-        # Handle aspect ratio filters
         ratio = kwargs.get("ratio", "")
         if ratio:
-            params["ratios"] = ratio  # Already comma-joined from get_filter_values
+            params["ratios"] = ratio
         
         try:
-            response = requests.get(
+            response = self.session.get(
                 self.api_url,
                 params=params,
                 headers=self._get_headers(),

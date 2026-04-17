@@ -3,14 +3,23 @@ from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
     QToolButton, QMessageBox, QWidget
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QPixmap, QIcon
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
+from PyQt5.QtGui import QPixmap
 from core.extension import WallpaperExtension
 from core.workers import ThumbnailLoader
 from core.wallpaper_manager import WallpaperSetterWorker
 
 
 THUMB_SIZE = QSize(280, 158)
+
+_placeholder_pixmap = None
+
+def get_placeholder():
+    global _placeholder_pixmap
+    if _placeholder_pixmap is None:
+        _placeholder_pixmap = QPixmap(THUMB_SIZE)
+        _placeholder_pixmap.fill(Qt.darkGray)
+    return _placeholder_pixmap
 
 
 class WallpaperWidget(QFrame):
@@ -25,6 +34,9 @@ class WallpaperWidget(QFrame):
         self.download_folder = download_folder
         self.thumb_url = extension.get_thumbnail_url(wallpaper_data)
         self._wallpaper_worker = None
+        self._thumb_loader = None
+        self._loaded = False
+        
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet("""
             WallpaperWidget {
@@ -39,14 +51,13 @@ class WallpaperWidget(QFrame):
         """)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.init_ui()
-        self.load_thumbnail()
+        QTimer.singleShot(0, self.load_thumbnail)
 
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)
 
-        # Thumbnail label
         self.thumb_label = QLabel()
         self.thumb_label.setFixedSize(THUMB_SIZE)
         self.thumb_label.setAlignment(Qt.AlignCenter)
@@ -62,17 +73,15 @@ class WallpaperWidget(QFrame):
         """)
         self.thumb_label.setScaledContents(True)
         self.thumb_label.setCursor(Qt.PointingHandCursor)
+        self.thumb_label.setPixmap(get_placeholder())
         layout.addWidget(self.thumb_label, alignment=Qt.AlignHCenter)
 
-        # Spacer for separation
         layout.addStretch()
 
-        # ========== SINGLE BOTTOM ROW ==========
         bottom_layout = QHBoxLayout()
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(16)
 
-        # Checkmark button (leftmost, same style as other buttons)
         self.checkmark_btn = QToolButton()
         self.checkmark_btn.setText("🗂")
         self.checkmark_btn.setToolTip("Downloaded")
@@ -94,7 +103,6 @@ class WallpaperWidget(QFrame):
         self.checkmark_btn.hide()
         bottom_layout.addWidget(self.checkmark_btn)
 
-        # Resolution
         res = self.extension.get_resolution(self.data)
         self.res_label = QLabel(res)
         self.res_label.setStyleSheet("color: #aaa; font-size: 12px;")
@@ -102,7 +110,6 @@ class WallpaperWidget(QFrame):
 
         bottom_layout.addStretch()
 
-        # Common button style for action buttons
         BUTTON_STYLE = """
             QToolButton {
                 background-color: rgba(60, 60, 60, 0.8);
@@ -119,7 +126,6 @@ class WallpaperWidget(QFrame):
             }
         """
 
-        # Expand button
         self.expand_btn = QToolButton()
         self.expand_btn.setText("⤢")
         self.expand_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -130,7 +136,6 @@ class WallpaperWidget(QFrame):
         self.expand_btn.clicked.connect(lambda: self.expand_triggered.emit(self.data))
         bottom_layout.addWidget(self.expand_btn)
 
-        # Set as Wallpaper button
         self.wallpaper_btn = QToolButton()
         self.wallpaper_btn.setText("🖵")
         self.wallpaper_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -145,28 +150,34 @@ class WallpaperWidget(QFrame):
         self.setLayout(layout)
         self.setFixedSize(THUMB_SIZE.width() + 20, THUMB_SIZE.height() + 54)
 
+    def _is_loader_running(self):
+        """Safely check if thumbnail loader is active (handles deleted C++ objects)."""
+        if not self._thumb_loader:
+            return False
+        try:
+            return self._thumb_loader.isRunning()
+        except RuntimeError:
+            self._thumb_loader = None
+            return False
+
     def set_as_wallpaper(self):
-        """Handle set as wallpaper button click - works for both local and online sources."""
         self._wallpaper_worker = WallpaperSetterWorker(
             self.data, self.extension, self.download_folder
         )
         self._wallpaper_worker.finished.connect(self._on_wallpaper_set)
         self._wallpaper_worker.start()
-        
-        # Show loading feedback
         self.wallpaper_btn.setEnabled(False)
         self.wallpaper_btn.setToolTip("Setting wallpaper...")
 
     def _on_wallpaper_set(self, success: bool, message: str, filepath: str):
-        """Callback when wallpaper setting finishes."""
         self.wallpaper_btn.setEnabled(True)
         self.wallpaper_btn.setToolTip("Set as Desktop Background" if success else message)
-        
-        if success and filepath:
-            # Don't show checkmark for temp files - only if actually downloaded
-            pass
-        else:
+        if not success:
             QMessageBox.warning(self, "Wallpaper Error", f"Failed to set wallpaper:\n{message}")
+        
+        # FIX: Update checkmark if wallpaper was successfully downloaded/set
+        if success:
+            self.update_downloaded_status()
         
         self._wallpaper_worker = None
 
@@ -189,29 +200,49 @@ class WallpaperWidget(QFrame):
             self.checkmark_btn.hide()
 
     def load_thumbnail(self):
-        if self.thumb_url:
-            if os.path.exists(self.thumb_url):
-                pixmap = QPixmap(self.thumb_url)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.thumb_label.setPixmap(scaled)
-                else:
-                    self.thumb_label.setText("Invalid image")
-                self.update_downloaded_status()
-                return
-            self.loader = ThumbnailLoader(self.thumb_url)
-            self.loader.loaded.connect(self.set_thumbnail)
-            self.loader.start()
-        else:
-            self.thumb_label.setText("No preview")
+        if self._loaded or not self.thumb_url:
+            if not self.thumb_url:
+                self.thumb_label.setText("No preview")
+            return
+        
+        if self._is_loader_running():
+            self._thumb_loader.terminate()
+            self._thumb_loader.wait(100)
+        
+        if os.path.exists(self.thumb_url):
+            pixmap = QPixmap(self.thumb_url)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.thumb_label.setPixmap(scaled)
+                self._loaded = True
+            else:
+                self.thumb_label.setText("Invalid image")
+            self.update_downloaded_status()
+            return
+        
+        self._thumb_loader = ThumbnailLoader(self.thumb_url)
+        self._thumb_loader.loaded.connect(self.set_thumbnail)
+        self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
+        self._thumb_loader.start()
 
     def set_thumbnail(self, pixmap: QPixmap):
         if not pixmap.isNull():
             scaled = pixmap.scaled(THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.thumb_label.setPixmap(scaled)
+            self._loaded = True
         else:
             self.thumb_label.setText("Load failed")
         self.update_downloaded_status()
 
     def emit_download(self):
         self.download_triggered.emit(self.data)
+        
+    def cleanup(self):
+        """Prepare widget for recycling. Safely stops any running loaders."""
+        if self._is_loader_running():
+            self._thumb_loader.terminate()
+            self._thumb_loader.wait(100)
+        self._thumb_loader = None
+        self._loaded = False
+        self.thumb_label.setPixmap(get_placeholder())
+        self.checkmark_btn.hide()

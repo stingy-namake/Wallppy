@@ -1,10 +1,12 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from typing import List, Dict, Any
 from core.extension import WallpaperExtension
 
 
 class DanbooruExtension(WallpaperExtension):
-    """Danbooru API implementation."""
+    """Danbooru API implementation with connection pooling."""
     
     def __init__(self, username: str = None, api_key: str = None):
         super().__init__()
@@ -13,6 +15,22 @@ class DanbooruExtension(WallpaperExtension):
         self.username = username
         self.api_key = api_key
         self._last_response = None
+        
+        # Setup connection pooling
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(
+            pool_connections=3,
+            pool_maxsize=5,
+            max_retries=retry_strategy
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
     
     def _auth_params(self) -> Dict[str, str]:
         if self.username and self.api_key:
@@ -22,7 +40,6 @@ class DanbooruExtension(WallpaperExtension):
     def search(self, query: str, page: int = 1, **kwargs) -> List[Dict[str, Any]]:
         tags = query.strip().split() if query else ["order:rank"]
         if query:
-            # Replace spaces with underscores to form a single tag
             safe_query = query.strip().replace(' ', '_')
             tags.append(safe_query)
         
@@ -44,7 +61,7 @@ class DanbooruExtension(WallpaperExtension):
         
         url = f"{self.base_url}/posts.json"
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=15)
+            response = self.session.get(url, params=params, headers=headers, timeout=15)
             response.raise_for_status()
             data = response.json()
             if isinstance(data, dict) and not data.get("success", True):

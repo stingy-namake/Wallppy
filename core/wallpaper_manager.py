@@ -1,22 +1,43 @@
 import os
 import platform
 import subprocess
-import tempfile
 import re
-import requests
+import hashlib
+import shutil
+from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 
 class WallpaperManager:
     """Cross-platform manager to set the desktop wallpaper."""
     
+    _cache_dir = Path.home() / ".cache" / "wallppy"
+    
+    @classmethod
+    def _ensure_cache_dir(cls):
+        cls._cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    @classmethod
+    def get_cached_path(cls, source_path):
+        """Get cached path for a wallpaper copy (prevents file locks on Windows)."""
+        cls._ensure_cache_dir()
+        stat = os.stat(source_path)
+        cache_key = hashlib.md5(f"{source_path}:{stat.st_mtime}".encode()).hexdigest()
+        return cls._cache_dir / f"{cache_key}.jpg"
+
     @staticmethod
     def set_wallpaper(image_path):
         """Set the desktop wallpaper based on the current OS."""
         system = platform.system()
         try:
+            image_path = os.path.abspath(image_path)
+            
+            # Windows: copy to cache to avoid file lock issues when original is moved/deleted
             if system == "Windows":
-                WallpaperManager._set_windows_wallpaper(image_path)
-            elif system == "Darwin":  # macOS
+                cached = WallpaperManager.get_cached_path(image_path)
+                if not cached.exists():
+                    shutil.copy2(image_path, cached)
+                WallpaperManager._set_windows_wallpaper(str(cached))
+            elif system == "Darwin":
                 WallpaperManager._set_macos_wallpaper(image_path)
             elif system == "Linux":
                 WallpaperManager._set_linux_wallpaper(image_path)
@@ -44,7 +65,6 @@ class WallpaperManager:
 
     @staticmethod
     def _set_linux_wallpaper(image_path):
-        # Try COSMIC first
         cosmic_config = os.path.expanduser("~/.config/cosmic/com.system76.CosmicBackground/v1/all")
         if os.path.exists(cosmic_config):
             try:
@@ -65,7 +85,6 @@ class WallpaperManager:
             except Exception as e:
                 print(f"Failed to set COSMIC wallpaper: {e}")
 
-        # Fallback to other desktop environments
         commands = [
             ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", f"file://{image_path}"],
             ["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", f"file://{image_path}"],
@@ -102,21 +121,20 @@ class WallpaperSetterWorker(QThread):
             
             os.makedirs(self.download_folder, exist_ok=True)
             
-            # Check if already downloaded locally
             if os.path.exists(filepath):
                 success, message = WallpaperManager.set_wallpaper(filepath)
                 self.finished.emit(success, message, filepath)
                 return
             
-            # Check if it's already a local file (LocalExtension)
             if os.path.exists(image_url):
                 success, message = WallpaperManager.set_wallpaper(image_url)
                 self.finished.emit(success, message, image_url)
                 return
             
-            # Download from online source
             self.progress.emit(0)
-            response = requests.get(image_url, stream=True, timeout=30)
+            from core.workers import get_session
+            session = get_session()
+            response = session.get(image_url, stream=True, timeout=30)
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -130,7 +148,6 @@ class WallpaperSetterWorker(QThread):
                         if total_size:
                             self.progress.emit(int(downloaded * 100 / total_size))
             
-            # Now set the downloaded file as wallpaper
             success, message = WallpaperManager.set_wallpaper(filepath)
             self.finished.emit(success, message, filepath)
             
