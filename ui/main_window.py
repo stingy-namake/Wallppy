@@ -18,7 +18,6 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.extension = create_extension(settings.extension_name)
         if self.extension is None:
-        # Fallback if saved extension no longer exists (e.g. Danbooru was removed)
             fallback_name = get_extension_names()[0] if get_extension_names() else None
             if fallback_name:
                 self.extension = create_extension(fallback_name)
@@ -71,34 +70,38 @@ class MainWindow(QMainWindow):
         new_ext = create_extension(name)
         if new_ext:
             self.extension = new_ext
-            # Update results page with new extension
             self.results_page.update_extension(new_ext)
     
     def setup_status_bar(self):
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
         
+        # ===== MODERN SLEEK DOWNLOAD PROGRESS =====
         self.download_progress = QProgressBar()
-        self.download_progress.setFixedWidth(120)
-        self.download_progress.setFixedHeight(12)
+        self.download_progress.setFixedWidth(140)
+        self.download_progress.setFixedHeight(4)
         self.download_progress.setRange(0, 100)
         self.download_progress.setValue(0)
         self.download_progress.setVisible(False)
+        self.download_progress.setTextVisible(False)
         self.download_progress.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #555;
+                background-color: #1e1e1e;
+                border: none;
                 border-radius: 2px;
-                text-align: center;
+                max-height: 4px;
+                min-height: 4px;
             }
             QProgressBar::chunk {
-                background-color: #1E6FF0;
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #1E6FF0, stop:1 #00c6ff);
                 border-radius: 2px;
             }
         """)
         self.status_bar.addPermanentWidget(self.download_progress)
         
         tip_label = QLabel("🖱️ Double‑click thumbnail to download")
-        tip_label.setStyleSheet("color: #aaa; padding-right: 8px;")
+        tip_label.setStyleSheet("color: #666; padding-right: 10px; font-size: 11px; letter-spacing: 0.3px;")
         self.status_bar.addPermanentWidget(tip_label)
     
     def apply_dark_theme(self):
@@ -182,7 +185,11 @@ class MainWindow(QMainWindow):
             }
             QStatusBar {
                 background-color: #2d2d2d;
-                color: #ccc;
+                color: #888;
+                font-size: 11px;
+            }
+            QStatusBar::item {
+                border: none;
             }
         """)
     
@@ -192,7 +199,6 @@ class MainWindow(QMainWindow):
 
     def on_explore_requested(self):
         """Handle explore action: search with empty query."""
-        # Use empty string for query
         self.results_page.start_search("")
         self.stacked.setCurrentIndex(1)
     

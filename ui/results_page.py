@@ -211,7 +211,7 @@ class ImageOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 0.9);")
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 0.92);")
         self.setVisible(False)
         self.loader = None
 
@@ -219,26 +219,73 @@ class ImageOverlay(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignCenter)
 
+        # ===== MODERN LOADING CARD =====
+        self.loading_card = QFrame()
+        self.loading_card.setFixedSize(220, 120)
+        self.loading_card.setStyleSheet("""
+            QFrame {
+                background-color: rgba(25, 25, 25, 0.95);
+                border-radius: 14px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+            }
+        """)
+        card_layout = QVBoxLayout(self.loading_card)
+        card_layout.setAlignment(Qt.AlignCenter)
+        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+
+        self.spinner = QLabel("⟳")
+        self.spinner.setAlignment(Qt.AlignCenter)
+        self.spinner.setStyleSheet("""
+            QLabel {
+                color: #1E6FF0;
+                font-size: 28px;
+                background: transparent;
+                font-weight: bold;
+            }
+        """)
+        card_layout.addWidget(self.spinner)
+
+        self.loading_text = QLabel("Loading image")
+        self.loading_text.setAlignment(Qt.AlignCenter)
+        self.loading_text.setStyleSheet("""
+            QLabel {
+                color: #e0e0e0;
+                font-size: 14px;
+                font-weight: 500;
+                letter-spacing: 0.8px;
+                background: transparent;
+            }
+        """)
+        card_layout.addWidget(self.loading_text)
+
+        layout.addWidget(self.loading_card, alignment=Qt.AlignCenter)
+
+        # Image display
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setScaledContents(False)
-        layout.addWidget(self.image_label)
+        layout.addWidget(self.image_label, alignment=Qt.AlignCenter)
+        self.image_label.hide()
 
-        self.loading_label = QLabel("Loading full image...")
-        self.loading_label.setStyleSheet("color: white; font-size: 18px; background: transparent;")
-        self.loading_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.loading_label)
-
-        hint = QLabel("Press ESC to close")
-        hint.setStyleSheet("color: #aaa; font-size: 12px; background: transparent; padding: 10px;")
-        hint.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hint)
+        # Hint
+        self.hint = QLabel("Press ESC or click to close")
+        self.hint.setAlignment(Qt.AlignCenter)
+        self.hint.setStyleSheet("""
+            color: #666;
+            font-size: 11px;
+            background: transparent;
+            padding: 12px;
+            letter-spacing: 0.5px;
+        """)
+        layout.addWidget(self.hint, alignment=Qt.AlignCenter)
 
         QShortcut(QKeySequence("Escape"), self, self.close_overlay)
 
     def show_image(self, url):
         self.image_label.clear()
-        self.loading_label.setVisible(True)
+        self.image_label.hide()
+        self.loading_card.setVisible(True)
         self.setVisible(True)
         self.raise_()
 
@@ -250,11 +297,10 @@ class ImageOverlay(QWidget):
         self.loader.start()
 
     def _cancel_loader(self):
-        """Safely stop any running image loader to prevent deleted-object crashes."""
+        """Safely stop any running image loader."""
         if self.loader is None:
             return
         try:
-            # Disconnect our slots first so stale signals don't fire after we're gone
             try:
                 self.loader.loaded.disconnect(self.on_image_loaded)
             except (TypeError, RuntimeError):
@@ -267,32 +313,36 @@ class ImageOverlay(QWidget):
                 self.loader.terminate()
                 self.loader.wait(300)
         except RuntimeError:
-            pass  # C++ object already deleted
+            pass
         finally:
             self.loader = None
 
     def on_image_loaded(self, pixmap):
-        self.loading_label.setVisible(False)
+        self.loading_card.hide()
+        self.image_label.show()
         if not pixmap.isNull():
-            available = self.size() - QSize(40, 80)
+            available = self.size() - QSize(60, 120)
             scaled = pixmap.scaled(available, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.image_label.setPixmap(scaled)
         else:
             self.image_label.setText("Failed to load image")
 
     def on_load_error(self, msg):
-        self.loading_label.setVisible(False)
+        self.loading_card.hide()
+        self.image_label.show()
         self.image_label.setText(f"Error: {msg}")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.image_label.pixmap() and not self.image_label.pixmap().isNull():
-            available = self.size() - QSize(40, 80)
+        if self.image_label.isVisible() and self.image_label.pixmap() and not self.image_label.pixmap().isNull():
+            available = self.size() - QSize(60, 120)
             scaled = self.image_label.pixmap().scaled(available, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.image_label.setPixmap(scaled)
 
     def close_overlay(self):
         self._cancel_loader()
+        self.loading_card.hide()
+        self.image_label.hide()
         self.setVisible(False)
         self.closed.emit()
 
@@ -473,10 +523,26 @@ class ResultsPage(QWidget):
         no_results_layout.addWidget(self.no_results_label)
         self.results_container.addWidget(self.no_results_widget)
 
-        # Loading indicator
+        # ===== MODERN SLEEK LOADING BAR =====
         self.loading_progress = QProgressBar()
         self.loading_progress.setVisible(False)
         self.loading_progress.setRange(0, 0)
+        self.loading_progress.setTextVisible(False)
+        self.loading_progress.setMaximumHeight(3)
+        self.loading_progress.setStyleSheet("""
+            QProgressBar {
+                background-color: #1e1e1e;
+                border: none;
+                border-radius: 2px;
+                max-height: 3px;
+                min-height: 3px;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #1558C4, stop:0.5 #1E6FF0, stop:1 #3D82F5);
+                border-radius: 2px;
+            }
+        """)
         layout.addWidget(self.loading_progress)
 
         self.scroll_area.viewport().installEventFilter(self)
