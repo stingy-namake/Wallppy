@@ -48,9 +48,7 @@ class WallpaperManager:
         cosmic_config = os.path.expanduser("~/.config/cosmic/com.system76.CosmicBackground/v1/all")
         if os.path.exists(cosmic_config):
             try:
-                # Escape the path for use in a regex and RON format
                 escaped_path = image_path.replace('\\', '\\\\')
-                # Regex to find and replace the existing 'source: Path("...")' line
                 pattern = r'source: Path\(".*?"\)'
                 replacement = f'source: Path("{escaped_path}")'
 
@@ -58,7 +56,6 @@ class WallpaperManager:
                     content = f.read()
                 new_content = re.sub(pattern, replacement, content)
 
-                # If no source line was found, add one (basic implementation)
                 if "source:" not in new_content:
                     new_content += f"\nsource: Path(\"{escaped_path}\")"
 
@@ -85,8 +82,9 @@ class WallpaperManager:
         raise OSError("Could not set wallpaper. No supported desktop environment found.")
 
 class WallpaperSetterWorker(QThread):
-    """Worker thread to handle wallpaper setting without freezing the UI."""
-    finished = pyqtSignal(bool, str)
+    """Worker thread to download (if needed) and set wallpaper without freezing the UI."""
+    finished = pyqtSignal(bool, str, str)  # success, message, final_filepath
+    progress = pyqtSignal(int)
 
     def __init__(self, image_data, extension, download_folder):
         super().__init__()
@@ -97,21 +95,44 @@ class WallpaperSetterWorker(QThread):
     def run(self):
         try:
             image_url = self.extension.get_download_url(self.image_data)
-            # Check if it's already a local file
+            wall_id = self.extension.get_wallpaper_id(self.image_data)
+            ext = self.extension.get_file_extension(self.image_data)
+            filename = f"wallppy-{wall_id}.{ext}"
+            filepath = os.path.join(self.download_folder, filename)
+            
+            os.makedirs(self.download_folder, exist_ok=True)
+            
+            # Check if already downloaded locally
+            if os.path.exists(filepath):
+                success, message = WallpaperManager.set_wallpaper(filepath)
+                self.finished.emit(success, message, filepath)
+                return
+            
+            # Check if it's already a local file (LocalExtension)
             if os.path.exists(image_url):
                 success, message = WallpaperManager.set_wallpaper(image_url)
-            else:
-                # Download to a temp file, set wallpaper, then clean up
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                    response = requests.get(image_url, stream=True, timeout=30)
-                    response.raise_for_status()
-                    for chunk in response.iter_content(chunk_size=8192):
-                        tmp.write(chunk)
-                    tmp_path = tmp.name
-                
-                success, message = WallpaperManager.set_wallpaper(tmp_path)
-                os.unlink(tmp_path)  # Clean up temp file
-                
-            self.finished.emit(success, message)
+                self.finished.emit(success, message, image_url)
+                return
+            
+            # Download from online source
+            self.progress.emit(0)
+            response = requests.get(image_url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size:
+                            self.progress.emit(int(downloaded * 100 / total_size))
+            
+            # Now set the downloaded file as wallpaper
+            success, message = WallpaperManager.set_wallpaper(filepath)
+            self.finished.emit(success, message, filepath)
+            
         except Exception as e:
-            self.finished.emit(False, str(e))
+            self.finished.emit(False, str(e), "")

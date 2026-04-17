@@ -31,9 +31,28 @@ class WallhavenExtension(WallpaperExtension):
             "categories": category,
             "purity": purity,
             "page": page,
-            "sorting": "date_added",
-            "order": "desc"
         }
+        
+        # Handle sorting
+        sorting = kwargs.get("sorting", "date_added")
+        params["sorting"] = sorting
+        params["order"] = "desc"
+        
+        # Handle toplist time range if sorting is toplist
+        if sorting == "toplist":
+            top_range = kwargs.get("top_range", "1M")
+            params["topRange"] = top_range
+        
+        # Handle resolution filters
+        resolution = kwargs.get("resolution", "")
+        if resolution:
+            params["resolutions"] = resolution
+        
+        # Handle aspect ratio filters
+        ratio = kwargs.get("ratio", "")
+        if ratio:
+            params["ratios"] = ratio  # Already comma-joined from get_filter_values
+        
         try:
             response = requests.get(
                 self.api_url,
@@ -90,6 +109,59 @@ class WallhavenExtension(WallpaperExtension):
                     {"id": "sfw", "label": "SFW", "default": True},
                     {"id": "sketchy", "label": "Sketchy", "default": False},
                     {"id": "nsfw", "label": "NSFW", "default": False, "requires_api_key": True}
+                ]
+            },
+            "sorting": {
+                "type": "dropdown",
+                "label": "Sorting",
+                "options": [
+                    {"id": "date_added", "label": "Date Added", "default": True},
+                    {"id": "relevance", "label": "Relevance", "default": False},
+                    {"id": "random", "label": "Random", "default": False},
+                    {"id": "views", "label": "Views", "default": False},
+                    {"id": "favorites", "label": "Favorites", "default": False},
+                    {"id": "toplist", "label": "Toplist", "default": False}
+                ]
+            },
+            "top_range": {
+                "type": "dropdown",
+                "label": "Toplist Period",
+                "options": [
+                    {"id": "1d", "label": "Last 24 Hours", "default": False},
+                    {"id": "3d", "label": "Last 3 Days", "default": False},
+                    {"id": "1w", "label": "Last Week", "default": False},
+                    {"id": "1M", "label": "Last Month", "default": True},
+                    {"id": "3M", "label": "Last 3 Months", "default": False},
+                    {"id": "6M", "label": "Last 6 Months", "default": False},
+                    {"id": "1y", "label": "Last Year", "default": False}
+                ]
+            },
+            "resolution": {
+                "type": "dropdown",
+                "label": "Resolution",
+                "options": [
+                    {"id": "", "label": "Any", "default": True},
+                    {"id": "1920x1080", "label": "1920x1080 (FHD)", "default": False},
+                    {"id": "2560x1440", "label": "2560x1440 (QHD)", "default": False},
+                    {"id": "3840x2160", "label": "3840x2160 (4K UHD)", "default": False},
+                    {"id": "7680x4320", "label": "7680x4320 (8K UHD)", "default": False},
+                    {"id": "1280x720", "label": "1280x720 (HD)", "default": False},
+                    {"id": "3440x1440", "label": "3440x1440 (UltraWide)", "default": False},
+                    {"id": "2560x1080", "label": "2560x1080 (UltraWide)", "default": False}
+                ]
+            },
+            "ratio": {
+                "type": "checkboxes",
+                "label": "Aspect Ratio",
+                "options": [
+                    {"id": "16x9", "label": "16:9", "default": False},
+                    {"id": "16x10", "label": "16:10", "default": False},
+                    {"id": "21x9", "label": "21:9", "default": False},
+                    {"id": "32x9", "label": "32:9", "default": False},
+                    {"id": "4x3", "label": "4:3", "default": False},
+                    {"id": "5x4", "label": "5:4", "default": False},
+                    {"id": "9x16", "label": "9:16 (Mobile)", "default": False},
+                    {"id": "1x1", "label": "1:1", "default": False}
                 ]
             }
         }

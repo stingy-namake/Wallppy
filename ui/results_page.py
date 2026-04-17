@@ -47,26 +47,37 @@ class FilterPanel(QFrame):
                 padding: 8px;
             }
         """)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.init_ui()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(16)
+        main_layout.setSpacing(12)
+        main_layout.setAlignment(Qt.AlignTop)
 
         filters = self.extension.get_filters()
+        
         for filter_id, filter_def in filters.items():
             filter_type = filter_def.get("type")
             label = filter_def.get("label", filter_id)
             options = filter_def.get("options", [])
 
+            group_widget = QWidget()
+            group_layout = QVBoxLayout(group_widget)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.setSpacing(6)
+            
             cat_label = QLabel(label)
             cat_label.setStyleSheet("color: #aaa; font-size: 13px; font-weight: bold;")
-            main_layout.addWidget(cat_label)
+            group_layout.addWidget(cat_label)
 
             if filter_type == "checkboxes":
-                cb_layout = QHBoxLayout()
-                cb_layout.setSpacing(20)
+                cb_container = QWidget()
+                cb_layout = QHBoxLayout(cb_container)
+                cb_layout.setContentsMargins(0, 0, 0, 0)
+                cb_layout.setSpacing(16)
+                
                 for opt in options:
                     cb = QCheckBox(opt["label"])
                     cb.setChecked(opt.get("default", False))
@@ -75,16 +86,12 @@ class FilterPanel(QFrame):
                     cb_layout.addWidget(cb)
                     key = f"{filter_id}.{opt['id']}"
                     self.widgets[key] = cb
+                
                 cb_layout.addStretch()
-                main_layout.addLayout(cb_layout)
+                group_layout.addWidget(cb_container)
 
             elif filter_type == "dropdown":
                 combo = QComboBox()
-                for opt in options:
-                    combo.addItem(opt["label"], opt["id"])
-                    if opt.get("default", False):
-                        combo.setCurrentIndex(combo.count() - 1)
-                combo.currentIndexChanged.connect(self.filters_changed.emit)
                 combo.setStyleSheet("""
                     QComboBox {
                         background-color: #3d3d3d;
@@ -92,15 +99,33 @@ class FilterPanel(QFrame):
                         border-radius: 4px;
                         padding: 6px;
                         color: white;
+                        min-width: 150px;
                     }
                     QComboBox::drop-down {
                         border: none;
+                        width: 20px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background-color: #3d3d3d;
+                        color: white;
+                        selection-background-color: #1E6FF0;
                     }
                 """)
-                main_layout.addWidget(combo)
-                self.widgets[filter_id] = combo
+                
+                # Populate dropdown items
+                default_index = 0
+                for i, opt in enumerate(options):
+                    combo.addItem(opt["label"], opt["id"])
+                    if opt.get("default", False):
+                        default_index = i
+                
+                combo.setCurrentIndex(default_index)
+                combo.currentIndexChanged.connect(self.filters_changed.emit)
+                group_layout.addWidget(combo)
+                self.widgets[filter_id] = combo  # Store by filter_id, not key
 
-        main_layout.addStretch()
+            main_layout.addWidget(group_widget)
+
         self.setLayout(main_layout)
 
     def get_filter_values(self) -> dict:
@@ -123,6 +148,14 @@ class FilterPanel(QFrame):
                         cb = self.widgets.get(f"{filter_id}.{opt['id']}")
                         pur += "1" if (cb and cb.isChecked()) else "0"
                     values[filter_id] = pur
+                elif filter_id == "ratio":
+                    # Aspect ratio - join multiple selections with comma
+                    selected = []
+                    for opt in filter_def["options"]:
+                        cb = self.widgets.get(f"{filter_id}.{opt['id']}")
+                        if cb and cb.isChecked():
+                            selected.append(opt["id"])
+                    values[filter_id] = ",".join(selected) if selected else ""
                 else:
                     checked = []
                     for opt in filter_def["options"]:
@@ -130,6 +163,7 @@ class FilterPanel(QFrame):
                         if cb and cb.isChecked():
                             checked.append(opt["id"])
                     values[filter_id] = checked
+                    
             elif filter_type == "dropdown":
                 combo = self.widgets.get(filter_id)
                 if combo:
@@ -302,29 +336,45 @@ class ResultsPage(QWidget):
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(8)
 
+        # Search icon (keep small but centered)
         search_icon = QLabel()
         search_icon.setPixmap(QIcon.fromTheme("system-search").pixmap(16, 16))
         search_layout.addWidget(search_icon)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search wallpapers...")
+        self.search_edit.setFixedHeight(32) 
+        self.search_edit.setStyleSheet("""
+            QLineEdit {
+                font-size: 14px;
+                padding: 0px 12px;
+                border-radius: 4px;
+                background-color: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                color: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid #1E6FF0;
+            }
+        """)
         self.search_edit.returnPressed.connect(self.emit_search)
         search_layout.addWidget(self.search_edit, 3)
 
-        # Filter toggle button
         self.filter_toggle_btn = QToolButton()
         self.filter_toggle_btn.setText("▼ Filters")
         self.filter_toggle_btn.setToolTip("Show/hide filters")
         self.filter_toggle_btn.setCheckable(True)
         self.filter_toggle_btn.setChecked(False)
+        self.filter_toggle_btn.setFixedHeight(32)
         self.filter_toggle_btn.setStyleSheet("""
             QToolButton {
                 background-color: #3d3d3d;
                 border-radius: 4px;
-                padding: 6px 12px;
-                min-height: 20px;
+                padding: 0px 12px;
+                min-height: 30px;
                 color: white;
                 border: 1px solid #4d4d4d;
+                font-size: 13px;
             }
             QToolButton:hover {
                 background-color: #4d4d4d;
@@ -337,13 +387,16 @@ class ResultsPage(QWidget):
         search_layout.addWidget(self.filter_toggle_btn)
 
         self.search_btn = QPushButton("Search")
+        self.search_btn.setFixedHeight(32)
         self.search_btn.clicked.connect(self.emit_search)
         self.search_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1E6FF0;
                 color: white;
                 border-radius: 4px;
-                padding: 6px 12px;
+                padding: 0px 16px;
+                min-height: 30px;
+                font-size: 13px;
             }
             QPushButton:hover {
                 background-color: #3D82F5;
@@ -430,8 +483,9 @@ class ResultsPage(QWidget):
         self.filter_toggle_btn.setText("▲ Filters" if not is_visible else "▼ Filters")
 
     def on_filters_changed(self):
-        if self.current_query:
-            self.start_search(self.current_query)
+        # FIXED: Removed 'if self.current_query:' check so filters work in explore mode too
+        # Now it will refresh the search regardless of whether there's a query or not
+        self.start_search(self.current_query)
 
     def eventFilter(self, obj, event):
         if obj == self.scroll_area.viewport() and event.type() == event.Resize:
@@ -573,7 +627,7 @@ class ResultsPage(QWidget):
             widget = WallpaperWidget(self.extension, wp, self.settings.download_folder)
             widget.download_triggered.connect(self.download_wallpaper)
             widget.expand_triggered.connect(self.expand_wallpaper)
-            widget.set_wallpaper_triggered.connect(self.set_as_background)  # <-- New connection
+            widget.set_wallpaper_triggered.connect(self.set_as_background)
             self.grid_layout.addWidget(widget, row, col)
 
         row_count = (len(self.wallpapers) - 1) // self.columns + 1
@@ -588,7 +642,7 @@ class ResultsPage(QWidget):
             widget = WallpaperWidget(self.extension, wp, self.settings.download_folder)
             widget.download_triggered.connect(self.download_wallpaper)
             widget.expand_triggered.connect(self.expand_wallpaper)
-            widget.set_wallpaper_triggered.connect(self.set_as_background)  # <-- New connection
+            widget.set_wallpaper_triggered.connect(self.set_as_background)
             self.grid_layout.addWidget(widget, row, col)
 
         row_count = (len(self.wallpapers) - 1) // self.columns + 1
@@ -643,9 +697,9 @@ class ResultsPage(QWidget):
         main_win = self.window()
         if hasattr(main_win, 'status_bar'):
             if success:
-                main_win.status_bar.showMessage("✅ Wallpaper set successfully!")
+                main_win.status_bar.showMessage("Wallpaper set successfully!")
             else:
-                main_win.status_bar.showMessage(f"❌ Failed to set wallpaper: {message}")
+                main_win.status_bar.showMessage(f"Failed to set wallpaper: {message}")
 
     def update_extension(self, new_extension: WallpaperExtension):
         self.extension = new_extension

@@ -1,12 +1,13 @@
 import os
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QToolButton
+    QToolButton, QMessageBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QPixmap, QIcon
 from core.extension import WallpaperExtension
 from core.workers import ThumbnailLoader
+from core.wallpaper_manager import WallpaperSetterWorker
 
 
 THUMB_SIZE = QSize(280, 158)
@@ -23,6 +24,7 @@ class WallpaperWidget(QFrame):
         self.data = wallpaper_data
         self.download_folder = download_folder
         self.thumb_url = extension.get_thumbnail_url(wallpaper_data)
+        self._wallpaper_worker = None
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet("""
             WallpaperWidget {
@@ -100,6 +102,8 @@ class WallpaperWidget(QFrame):
                 border: none;
                 color: white;
                 font-size: 14px;
+                padding-top: 7px;
+                padding-bottom: 7px;
                 text-align: center;
             }
             QToolButton:hover {
@@ -110,30 +114,52 @@ class WallpaperWidget(QFrame):
         # Expand button
         self.expand_btn = QToolButton()
         self.expand_btn.setText("⤢")
+        self.expand_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.expand_btn.setToolTip("Expand Preview")
         self.expand_btn.setCursor(Qt.PointingHandCursor)
         self.expand_btn.setStyleSheet(BUTTON_STYLE)
-        self.expand_btn.setFixedSize(36, 30)  # FORCE SAME SIZE
-        self.expand_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.expand_btn.setFixedSize(36, 30)
         self.expand_btn.clicked.connect(lambda: self.expand_triggered.emit(self.data))
         bottom_layout.addWidget(self.expand_btn)
 
         # Set as Wallpaper button
         self.wallpaper_btn = QToolButton()
         self.wallpaper_btn.setText("🖼")
+        self.wallpaper_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.wallpaper_btn.setToolTip("Set as Desktop Background")
         self.wallpaper_btn.setCursor(Qt.PointingHandCursor)
         self.wallpaper_btn.setStyleSheet(BUTTON_STYLE)
-        self.wallpaper_btn.setFixedSize(36, 30)  # FORCE SAME SIZE
-        self.wallpaper_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.wallpaper_btn.clicked.connect(lambda: self.set_wallpaper_triggered.emit(self.data))
+        self.wallpaper_btn.setFixedSize(36, 30)
+        self.wallpaper_btn.clicked.connect(self.set_as_wallpaper)
         bottom_layout.addWidget(self.wallpaper_btn)
-        
 
         layout.addLayout(bottom_layout)
         self.setLayout(layout)
         self.setFixedSize(THUMB_SIZE.width() + 20, THUMB_SIZE.height() + 54)
 
+    def set_as_wallpaper(self):
+        """Handle set as wallpaper button click - works for both local and online sources."""
+        self._wallpaper_worker = WallpaperSetterWorker(
+            self.data, self.extension, self.download_folder
+        )
+        self._wallpaper_worker.finished.connect(self._on_wallpaper_set)
+        self._wallpaper_worker.start()
+        
+        # Show loading feedback
+        self.wallpaper_btn.setEnabled(False)
+        self.wallpaper_btn.setToolTip("Setting wallpaper...")
+
+    def _on_wallpaper_set(self, success: bool, message: str, filepath: str):
+        """Callback when wallpaper setting finishes."""
+        self.wallpaper_btn.setEnabled(True)
+        self.wallpaper_btn.setToolTip("Set as Desktop Background" if success else message)
+        
+        if success and filepath:
+            self.checkmark_label.show()  # Show checkmark since it's now downloaded
+        elif not success:
+            QMessageBox.warning(self, "Wallpaper Error", f"Failed to set wallpaper:\n{message}")
+        
+        self._wallpaper_worker = None
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
