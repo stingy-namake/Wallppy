@@ -1,0 +1,9 @@
+certifi==2026.2.25
+charset-normalizer==3.4.7
+idna==3.11
+pillow==12.2.0
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.18
+PyQt5_sip==12.18.0
+requests==2.33.1
+urllib3==2.6.3
