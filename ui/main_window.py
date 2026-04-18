@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QStackedWidget,
     QProgressBar, QLabel, QApplication, QStatusBar
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 from PyQt5.QtGui import QPalette, QColor
 
 from core.extension import create_extension, get_extension_names
@@ -17,7 +17,6 @@ class FadeStackedWidget(QStackedWidget):
     def setCurrentIndex(self, index):
         if self.currentIndex() == index:
             return
-        # Fade out current widget
         current_widget = self.currentWidget()
         next_widget = self.widget(index)
         if current_widget and next_widget:
@@ -55,6 +54,10 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(682, 500)
         self.resize(1100, 700)
 
+        # Track custom status label
+        self._status_label = None
+        self._clear_timer = None
+
         self.init_ui()
         self.apply_dark_theme()
         self.setup_status_bar()
@@ -72,9 +75,9 @@ class MainWindow(QMainWindow):
         # Landing page
         self.landing_page = LandingPage(self.settings)
         self.landing_page.search_requested.connect(self.on_search_requested)
-        self.landing_page.status_message.connect(self.on_status_message)
         self.landing_page.explore_requested.connect(self.on_explore_requested)
         self.landing_page.extension_changed.connect(self.on_extension_changed)
+        self.landing_page.status_message.connect(self.on_status_message)
         self.stacked.addWidget(self.landing_page)
 
         # Results page
@@ -83,13 +86,10 @@ class MainWindow(QMainWindow):
         self.results_page.search_requested.connect(self.on_search_requested)
         self.results_page.download_progress.connect(self.update_download_progress)
         self.results_page.download_finished.connect(self.on_download_finished)
+        self.results_page.search_finished.connect(self._clear_highlighted_status)
         self.stacked.addWidget(self.results_page)
 
         self.stacked.setCurrentIndex(0)
-
-    def on_status_message(self, message: str):
-        """Update the status bar with a temporary message."""
-        self.status_bar.showMessage(message)
 
     def keyPressEvent(self, event):
         if (self.stacked.currentIndex() == 0 and
@@ -135,6 +135,50 @@ class MainWindow(QMainWindow):
         tip_label = QLabel("🖱️ Double‑click thumbnail to download  •  Click 🖵 to set as wallpaper")
         tip_label.setStyleSheet("color: #777; padding-right: 10px; font-size: 11px;")
         self.status_bar.addPermanentWidget(tip_label)
+
+    def on_status_message(self, message: str):
+        """Display a highlighted status message (for scanning) or normal message."""
+        if "Scanning" in message:
+            self._set_highlighted_status(message)
+        else:
+            self._clear_highlighted_status()
+            self.status_bar.showMessage(message)
+
+    def _set_highlighted_status(self, message: str):
+        """Insert a rich-text label on the left side of the status bar."""
+        # Cancel any pending clear
+        if self._clear_timer is not None:
+            self._clear_timer.stop()
+            self._clear_timer = None
+
+        self._clear_highlighted_status()  # Remove any existing one
+
+        self._status_label = QLabel(f"<font color='#1E6FF0'>⟳ {message}</font>")
+        self._status_label.setTextFormat(Qt.RichText)
+        self._status_label.setStyleSheet("padding: 2px 8px;")
+        self.status_bar.addWidget(self._status_label)
+
+        # Clear the normal status message so it doesn't overlap
+        self.status_bar.showMessage("")
+
+        self._status_label.show()
+        self.status_bar.repaint()
+
+
+    def _clear_highlighted_status(self):
+        """Remove the temporary status label and restore normal message."""
+        if self._clear_timer is not None:
+            self._clear_timer.stop()
+            self._clear_timer = None
+
+        if self._status_label is not None:
+            self.status_bar.removeWidget(self._status_label)
+            self._status_label.deleteLater()
+            self._status_label = None
+
+        # Restore default message only if nothing else is showing
+        if self.status_bar.currentMessage() == "":
+            self.status_bar.showMessage("Ready")
 
     def apply_dark_theme(self):
         dark_palette = QPalette()
@@ -237,14 +281,17 @@ class MainWindow(QMainWindow):
         """)
 
     def on_search_requested(self, query: str):
+        self._clear_highlighted_status()
         self.results_page.start_search(query)
         self.stacked.setCurrentIndex(1)
 
     def on_explore_requested(self):
+        # Keep scanning message; it will be cleared by search_finished
         self.results_page.start_search("")
         self.stacked.setCurrentIndex(1)
 
     def go_home(self):
+        self._clear_highlighted_status()
         self.landing_page.set_search_text(self.results_page.search_edit.text())
         self.stacked.setCurrentIndex(0)
 
@@ -260,3 +307,8 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(msg)
         else:
             self.status_bar.showMessage(f"Download failed: {filename}")
+
+    def closeEvent(self, event):
+        if hasattr(self.extension, 'shutdown'):
+            self.extension.shutdown()
+        event.accept()

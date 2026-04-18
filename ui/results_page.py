@@ -427,6 +427,7 @@ class ImageOverlay(QWidget):
 class ResultsPage(QWidget):
     home_requested = pyqtSignal()
     search_requested = pyqtSignal(str)
+    search_finished = pyqtSignal()
     download_progress = pyqtSignal(int)
     download_finished = pyqtSignal(bool, str, str, str)
 
@@ -875,6 +876,7 @@ class ResultsPage(QWidget):
     def on_search_finished(self, wallpapers, page, total_pages):
         self.is_loading = False
         self._fade_out_loading()
+        self.search_finished.emit()
 
         if page == 1:
             self.wallpapers = wallpapers
@@ -905,6 +907,7 @@ class ResultsPage(QWidget):
     def on_search_error(self, error_msg):
         self.is_loading = False
         self._fade_out_loading()
+        self.search_finished.emit()
         QMessageBox.critical(self, "Search Error", error_msg)
 
     def show_no_results(self):
