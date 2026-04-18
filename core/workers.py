@@ -1,6 +1,7 @@
 import os
 import time
 import traceback
+import threading
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -9,24 +10,24 @@ from PyQt5.QtGui import QPixmap
 from typing import List, Dict, Any
 from .extension import WallpaperExtension
 
-# Global shared session for image downloads
-_global_session = None
+# Thread‑local storage for sessions
+_thread_local = threading.local()
 
 def get_session():
-    """Get or create the shared requests session with connection pooling."""
-    global _global_session
-    if _global_session is None:
-        _global_session = requests.Session()
+    """Return a thread‑local requests Session with connection pooling."""
+    if not hasattr(_thread_local, "session"):
+        session = requests.Session()
         retry = Retry(total=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
-        adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
-        _global_session.mount("https://", adapter)
-        _global_session.mount("http://", adapter)
-    return _global_session
+        adapter = HTTPAdapter(pool_connections=5, pool_maxsize=10, max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        _thread_local.session = session
+    return _thread_local.session
 
 
 class CrashAwareThread(QThread):
     """QThread that logs uncaught exceptions to the crash log before re-raising."""
-    
+
     def run(self):
         try:
             self._do_run()
@@ -37,7 +38,7 @@ class CrashAwareThread(QThread):
                 f"Worker {self.__class__.__name__} crashed:\n{traceback.format_exc()}"
             )
             raise
-    
+
     def _do_run(self):
         """Subclasses should override this instead of run()."""
         super().run()
@@ -46,14 +47,14 @@ class CrashAwareThread(QThread):
 class SearchWorker(CrashAwareThread):
     finished = pyqtSignal(list, int, int)  # wallpapers, page, total_pages
     error = pyqtSignal(str)
-    
+
     def __init__(self, extension: WallpaperExtension, query: str, page: int = 1, **kwargs):
         super().__init__()
         self.extension = extension
         self.query = query
         self.page = page
         self.kwargs = kwargs
-    
+
     def _do_run(self):
         try:
             wallpapers = self.extension.search(self.query, self.page, **self.kwargs)
@@ -66,35 +67,35 @@ class SearchWorker(CrashAwareThread):
 class DownloadWorker(CrashAwareThread):
     finished = pyqtSignal(bool, str, str, str)  # success, filepath, filename, wall_id
     progress = pyqtSignal(int)
-    
+
     def __init__(self, extension: WallpaperExtension, wallpaper_data: Dict[str, Any], download_folder: str):
         super().__init__()
         self.extension = extension
         self.data = wallpaper_data
         self.download_folder = download_folder
-    
+
     def _do_run(self):
         download_url = self.extension.get_download_url(self.data)
         wall_id = self.extension.get_wallpaper_id(self.data)
         if not download_url:
             self.finished.emit(False, "", "No image URL", wall_id)
             return
-        
+
         if os.path.exists(download_url):
             filename = os.path.basename(download_url)
             self.finished.emit(True, download_url, filename, wall_id)
             return
-        
+
         ext = self.extension.get_file_extension(self.data)
         filename = f"wallppy-{wall_id}.{ext}"
         filepath = os.path.join(self.download_folder, filename)
-        
+
         os.makedirs(self.download_folder, exist_ok=True)
-        
+
         if os.path.exists(filepath):
             self.finished.emit(True, filepath, filename, wall_id)
             return
-        
+
         try:
             session = get_session()
             response = session.get(download_url, stream=True, timeout=30)
@@ -103,7 +104,7 @@ class DownloadWorker(CrashAwareThread):
             downloaded = 0
             last_emit = 0
             min_interval = 0.05  # 50ms cap on progress signals
-            
+
             with open(filepath, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
@@ -115,7 +116,7 @@ class DownloadWorker(CrashAwareThread):
                             if pct == 100 or now - last_emit > min_interval:
                                 self.progress.emit(pct)
                                 last_emit = now
-            
+
             self.progress.emit(100)
             self.finished.emit(True, filepath, filename, wall_id)
         except Exception as e:
@@ -124,18 +125,18 @@ class DownloadWorker(CrashAwareThread):
 
 class ThumbnailLoader(CrashAwareThread):
     loaded = pyqtSignal(QPixmap)
-    
+
     def __init__(self, url: str):
         super().__init__()
         self.url = url
-    
+
     def _do_run(self):
         try:
             if os.path.exists(self.url):
                 pixmap = QPixmap(self.url)
                 self.loaded.emit(pixmap)
                 return
-            
+
             session = get_session()
             response = session.get(self.url, timeout=10)
             if response.status_code == 200:

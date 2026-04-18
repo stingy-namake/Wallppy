@@ -1,7 +1,7 @@
 import os
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QToolButton, QWidget, QGraphicsOpacityEffect
+    QToolButton, QWidget
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QPixmap, QPainter, QColor, QLinearGradient, QBrush
@@ -10,6 +10,7 @@ from core.workers import ThumbnailLoader
 
 
 THUMB_SIZE = QSize(280, 158)
+
 
 # Shimmer placeholder
 class ShimmerLabel(QLabel):
@@ -31,12 +32,10 @@ class ShimmerLabel(QLabel):
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # Draw base rect
         painter.setPen(Qt.NoPen)
         painter.setBrush(self._base_color)
         painter.drawRoundedRect(self.rect(), 6, 6)
 
-        # Draw shimmer gradient
         gradient = QLinearGradient(0, 0, self.width(), 0)
         pos = self._shimmer_value
         gradient.setColorAt(max(0, pos - 0.3), self._base_color)
@@ -85,6 +84,7 @@ class WallpaperWidget(QFrame):
         self._loaded = False
 
         self.setFrameShape(QFrame.StyledPanel)
+        # CSS hover effect instead of QPropertyAnimation
         self.setStyleSheet("""
             WallpaperWidget {
                 background-color: #2a2a2f;
@@ -94,11 +94,11 @@ class WallpaperWidget(QFrame):
             WallpaperWidget:hover {
                 background-color: #323238;
                 border-color: #4a4a50;
+                opacity: 0.95;
             }
         """)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.init_ui()
-        self.setup_hover_animation()
         QTimer.singleShot(0, self.load_thumbnail)
 
     def init_ui(self):
@@ -207,25 +207,6 @@ class WallpaperWidget(QFrame):
         self.setLayout(layout)
         self.setFixedSize(THUMB_SIZE.width() + 20, THUMB_SIZE.height() + 54)
 
-    def setup_hover_animation(self):
-        self._hover_anim = QPropertyAnimation(self, b"graphicsEffect")
-        self._hover_anim.setDuration(150)
-        self._opacity_effect = QGraphicsOpacityEffect()
-        self._opacity_effect.setOpacity(1.0)
-        self.setGraphicsEffect(self._opacity_effect)
-
-    def enterEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setEndValue(0.95)
-        self._hover_anim.start()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setEndValue(1.0)
-        self._hover_anim.start()
-        super().leaveEvent(event)
-
     def _is_loader_running(self):
         if not self._thumb_loader:
             return False
@@ -282,7 +263,7 @@ class WallpaperWidget(QFrame):
             return
 
         if self._is_loader_running():
-            self._thumb_loader.terminate()
+            self._thumb_loader.quit()
             self._thumb_loader.wait(100)
 
         if os.path.exists(self.thumb_url):
@@ -321,7 +302,7 @@ class WallpaperWidget(QFrame):
 
     def cleanup(self):
         if self._is_loader_running():
-            self._thumb_loader.terminate()
+            self._thumb_loader.quit()
             self._thumb_loader.wait(100)
         self._thumb_loader = None
         self._loaded = False

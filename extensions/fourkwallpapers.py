@@ -461,3 +461,10 @@ class FourKWallpapersExtension(WallpaperExtension):
         if self._executor:
             self._executor.shutdown(wait=False)
         self._save_cache()
+    
+    # In fourkwallpapers.py
+    def shutdown(self):
+        self._stop_background = True
+        if self._executor:
+            self._executor.shutdown(wait=False)
+        self._save_cache()

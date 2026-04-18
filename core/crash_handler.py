@@ -27,6 +27,7 @@ class CrashHandler:
         self.config_dir = Path.home() / ".config" / app_name
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = self.config_dir / "crash.log"
+        self.session_count_path = self.config_dir / ".session_count"
         
         # Setup Python file logger
         self.logger = logging.getLogger("wallppy.crash")
@@ -49,6 +50,7 @@ class CrashHandler:
         
         # Track if we had a crash on previous run
         self.previous_crash = self._check_previous_crash()
+        self.session_count = self._read_session_count()
     
     def install(self):
         """Install global exception hooks."""
@@ -74,6 +76,42 @@ class CrashHandler:
             threading.excepthook = self._original_threading_excepthook
         qInstallMessageHandler(None)
     
+    def _read_session_count(self) -> int:
+        """Read the number of consecutive clean sessions."""
+        try:
+            if self.session_count_path.exists():
+                return int(self.session_count_path.read_text().strip())
+        except Exception:
+            pass
+        return 0
+    
+    def _write_session_count(self, count: int):
+        """Write the session count to file."""
+        try:
+            self.session_count_path.write_text(str(count))
+        except Exception:
+            pass
+    
+    def _clear_log(self):
+        """Clear the crash log file."""
+        try:
+            if self.log_path.exists():
+                self.log_path.unlink()
+            # Reopen the file handler (new empty file)
+            for handler in self.logger.handlers[:]:
+                handler.close()
+                self.logger.removeHandler(handler)
+            file_handler = logging.FileHandler(self.log_path, mode='a', encoding='utf-8')
+            file_handler.setLevel(logging.DEBUG)
+            formatter = logging.Formatter(
+                '[%(asctime)s] [%(levelname)s]\n%(message)s\n',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        except Exception:
+            pass
+    
     def _check_previous_crash(self) -> bool:
         """Check if previous session ended without a clean shutdown marker."""
         marker = self.config_dir / ".clean_shutdown"
@@ -90,6 +128,14 @@ class CrashHandler:
         """Call this on normal exit to suppress the crash dialog next run."""
         marker = self.config_dir / ".clean_shutdown"
         marker.write_text(datetime.datetime.now().isoformat())
+        
+        # Increment session count on clean shutdown
+        new_count = self.session_count + 1
+        if new_count >= 5:
+            self._clear_log()
+            new_count = 0
+        self._write_session_count(new_count)
+        self.session_count = new_count
     
     def _log_header(self, text: str):
         """Write a visual separator to the log."""
