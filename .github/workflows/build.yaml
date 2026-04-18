@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'               # Triggers on tags like v1.0.0
-  workflow_dispatch:        # Allows manual trigger (uses branch name as tag)
+  workflow_dispatch:        # Allows manual trigger
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
           # For manual runs without a tag, use the branch name (e.g., 'master')
           if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
           BINARY_NAME="wallppy-linux-${TAG}"
-          pyinstaller --onefile --name "$BINARY_NAME" wallppy/main.py
+          pyinstaller --onefile --name "$BINARY_NAME" main.py
 
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v3
