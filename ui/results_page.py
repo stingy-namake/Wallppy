@@ -4,10 +4,10 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QScrollArea, QGridLayout, QFrame, QStackedWidget,
     QProgressBar, QMessageBox, QCheckBox, QComboBox, QSizePolicy,
-    QToolButton, QShortcut
+    QToolButton, QShortcut, QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThread, QTimer
-from PyQt5.QtGui import QIcon, QPixmap, QKeySequence
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThread, QTimer, QPropertyAnimation, QEasingCurve, QEvent
+from PyQt5.QtGui import QIcon, QPixmap, QKeySequence, QWheelEvent
 from core.extension import WallpaperExtension
 from core.settings import Settings
 from core.workers import SearchWorker, DownloadWorker, ThumbnailLoader, get_session
@@ -30,8 +30,8 @@ NO_RESULTS_MESSAGES = [
 ]
 
 
-class FilterPanel(QFrame):
-    """Collapsible panel that contains filter widgets."""
+class AnimatedFilterPanel(QFrame):
+    """Collapsible panel with smooth expand/collapse animation."""
     filters_changed = pyqtSignal()
 
     def __init__(self, extension: WallpaperExtension, parent=None):
@@ -40,14 +40,16 @@ class FilterPanel(QFrame):
         self.widgets = {}
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet("""
-            FilterPanel {
-                background-color: #2d2d2d;
-                border-radius: 4px;
+            AnimatedFilterPanel {
+                background-color: #2a2a2f;
+                border-radius: 6px;
                 padding: 8px;
             }
         """)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.init_ui()
+        self._animation = None
+        self._collapsed_height = 0
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -56,7 +58,7 @@ class FilterPanel(QFrame):
         main_layout.setAlignment(Qt.AlignTop)
 
         filters = self.extension.get_filters() if self.extension else {}
-        
+
         for filter_id, filter_def in filters.items():
             filter_type = filter_def.get("type")
             label = filter_def.get("label", filter_id)
@@ -66,7 +68,7 @@ class FilterPanel(QFrame):
             group_layout = QVBoxLayout(group_widget)
             group_layout.setContentsMargins(0, 0, 0, 0)
             group_layout.setSpacing(6)
-            
+
             cat_label = QLabel(label)
             cat_label.setStyleSheet("color: #aaa; font-size: 13px; font-weight: bold;")
             group_layout.addWidget(cat_label)
@@ -76,7 +78,7 @@ class FilterPanel(QFrame):
                 cb_layout = QHBoxLayout(cb_container)
                 cb_layout.setContentsMargins(0, 0, 0, 0)
                 cb_layout.setSpacing(16)
-                
+
                 for opt in options:
                     cb = QCheckBox(opt["label"])
                     cb.setChecked(opt.get("default", False))
@@ -85,7 +87,7 @@ class FilterPanel(QFrame):
                     cb_layout.addWidget(cb)
                     key = f"{filter_id}.{opt['id']}"
                     self.widgets[key] = cb
-                
+
                 cb_layout.addStretch()
                 group_layout.addWidget(cb_container)
 
@@ -93,8 +95,8 @@ class FilterPanel(QFrame):
                 combo = QComboBox()
                 combo.setStyleSheet("""
                     QComboBox {
-                        background-color: #3d3d3d;
-                        border: 1px solid #4d4d4d;
+                        background-color: #3a3a40;
+                        border: 1px solid #4a4a50;
                         border-radius: 4px;
                         padding: 6px;
                         color: white;
@@ -105,18 +107,18 @@ class FilterPanel(QFrame):
                         width: 20px;
                     }
                     QComboBox QAbstractItemView {
-                        background-color: #3d3d3d;
+                        background-color: #3a3a40;
                         color: white;
                         selection-background-color: #1E6FF0;
                     }
                 """)
-                
+
                 default_index = 0
                 for i, opt in enumerate(options):
                     combo.addItem(opt["label"], opt["id"])
                     if opt.get("default", False):
                         default_index = i
-                
+
                 combo.setCurrentIndex(default_index)
                 combo.currentIndexChanged.connect(self.filters_changed.emit)
                 group_layout.addWidget(combo)
@@ -160,13 +162,34 @@ class FilterPanel(QFrame):
                         if cb and cb.isChecked():
                             checked.append(opt["id"])
                     values[filter_id] = checked
-                    
+
             elif filter_type == "dropdown":
                 combo = self.widgets.get(filter_id)
                 if combo:
                     values[filter_id] = combo.currentData()
 
         return values
+
+    def animate_toggle(self, expand):
+        if self._animation and self._animation.state() == QPropertyAnimation.Running:
+            self._animation.stop()
+
+        if expand:
+            self.setVisible(True)
+            self._animation = QPropertyAnimation(self, b"maximumHeight")
+            self._animation.setDuration(200)
+            self._animation.setStartValue(0)
+            self._animation.setEndValue(self.sizeHint().height())
+            self._animation.setEasingCurve(QEasingCurve.OutCubic)
+            self._animation.start()
+        else:
+            self._animation = QPropertyAnimation(self, b"maximumHeight")
+            self._animation.setDuration(150)
+            self._animation.setStartValue(self.height())
+            self._animation.setEndValue(0)
+            self._animation.setEasingCurve(QEasingCurve.InCubic)
+            self._animation.finished.connect(lambda: self.setVisible(False))
+            self._animation.start()
 
 
 class FullImageLoader(QThread):
@@ -287,7 +310,7 @@ class ImageOverlay(QWidget):
         self.raise_()
 
         self._cancel_loader()
-        
+
         self.loader = FullImageLoader(url)
         self.loader.loaded.connect(self.on_image_loaded)
         self.loader.error.connect(self.on_load_error)
@@ -366,9 +389,78 @@ class ResultsPage(QWidget):
         self._active_workers = []
         self._widget_cache = {}
         self._resize_timer = None
+        self._scroll_animation = None  # For smooth scrolling
 
         self.init_ui()
         self.init_overlay()
+        self._setup_loading_bar_animation()
+        self._setup_smooth_scrolling()
+
+    def _setup_loading_bar_animation(self):
+        """Set up fade animation for the loading progress bar."""
+        self.loading_opacity = QGraphicsOpacityEffect(self.loading_progress)
+        self.loading_progress.setGraphicsEffect(self.loading_opacity)
+        self.loading_opacity.setOpacity(0.0)
+        self.loading_progress.setVisible(True)
+
+        self.loading_fade_anim = QPropertyAnimation(self.loading_opacity, b"opacity")
+        self.loading_fade_anim.setDuration(200)
+        self.loading_fade_anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+    def _fade_in_loading(self):
+        if self.loading_fade_anim.state() == QPropertyAnimation.Running:
+            self.loading_fade_anim.stop()
+        self.loading_fade_anim.setStartValue(self.loading_opacity.opacity())
+        self.loading_fade_anim.setEndValue(1.0)
+        self.loading_fade_anim.start()
+
+    def _fade_out_loading(self):
+        if self.loading_fade_anim.state() == QPropertyAnimation.Running:
+            self.loading_fade_anim.stop()
+        self.loading_fade_anim.setStartValue(self.loading_opacity.opacity())
+        self.loading_fade_anim.setEndValue(0.0)
+        self.loading_fade_anim.start()
+
+    def _setup_smooth_scrolling(self):
+        """Install event filter on viewport to handle wheel events for smooth scrolling."""
+        self.scroll_area.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj == self.scroll_area.viewport() and event.type() == QEvent.Wheel:
+            self._handle_wheel_event(event)
+            return True  # Event handled
+        return super().eventFilter(obj, event)
+
+    def _handle_wheel_event(self, event: QWheelEvent):
+        """Animate scrolling based on wheel delta."""
+        scrollbar = self.scroll_area.verticalScrollBar()
+        current_val = scrollbar.value()
+        max_val = scrollbar.maximum()
+
+        # Calculate delta: use pixel delta if available, else angle delta * some factor
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+
+        # Invert delta for natural scrolling? Keep standard: positive delta = scroll up
+        scroll_amount = -delta * 2  # Adjust sensitivity
+
+        target_val = current_val + scroll_amount
+        target_val = max(0, min(target_val, max_val))
+
+        if target_val == current_val:
+            return
+
+        # Stop any existing scroll animation
+        if self._scroll_animation and self._scroll_animation.state() == QPropertyAnimation.Running:
+            self._scroll_animation.stop()
+
+        self._scroll_animation = QPropertyAnimation(scrollbar, b"value")
+        self._scroll_animation.setDuration(150)  # Smooth but responsive
+        self._scroll_animation.setStartValue(current_val)
+        self._scroll_animation.setEndValue(target_val)
+        self._scroll_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._scroll_animation.start()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -409,7 +501,7 @@ class ResultsPage(QWidget):
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search wallpapers...")
-        self.search_edit.setFixedHeight(32) 
+        self.search_edit.setFixedHeight(32)
         self.search_edit.setStyleSheet("""
             QLineEdit {
                 font-size: 14px;
@@ -483,16 +575,21 @@ class ResultsPage(QWidget):
         layout.addLayout(top_bar)
 
         # Collapsible filter panel
-        self.filter_panel = FilterPanel(self.extension)
+        self.filter_panel = AnimatedFilterPanel(self.extension)
         self.filter_panel.filters_changed.connect(self.on_filters_changed)
         self.filter_panel.setVisible(False)
         layout.addWidget(self.filter_panel)
 
-        # Results container
+        # Results container (StackedWidget)
         self.results_container = QStackedWidget()
         layout.addWidget(self.results_container)
 
-        # Grid with centering
+        # --- Scroll area with floating button ---
+        scroll_container = QWidget()
+        scroll_layout = QVBoxLayout(scroll_container)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
@@ -512,9 +609,31 @@ class ResultsPage(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
 
         self.scroll_area.setWidget(grid_container)
-        self.results_container.addWidget(self.scroll_area)
+        scroll_layout.addWidget(self.scroll_area)
 
-        # No results
+        # Floating scroll-to-top button
+        self.scroll_to_top_btn = QPushButton("↑")
+        self.scroll_to_top_btn.setFixedSize(40, 40)
+        self.scroll_to_top_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(30, 111, 240, 0.9);
+                border-radius: 20px;
+                color: white;
+                font-size: 20px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #3D82F5;
+            }
+        """)
+        self.scroll_to_top_btn.setCursor(Qt.PointingHandCursor)
+        self.scroll_to_top_btn.clicked.connect(self.scroll_to_top)
+        self.scroll_to_top_btn.setParent(scroll_container)
+        self.scroll_to_top_btn.hide()
+
+        self.results_container.addWidget(scroll_container)
+
+        # No results widget
         self.no_results_widget = QWidget()
         no_results_layout = QVBoxLayout(self.no_results_widget)
         no_results_layout.setAlignment(Qt.AlignCenter)
@@ -527,7 +646,7 @@ class ResultsPage(QWidget):
 
         # Loading indicator
         self.loading_progress = QProgressBar()
-        self.loading_progress.setVisible(False)
+        self.loading_progress.setVisible(True)
         self.loading_progress.setRange(0, 0)
         self.loading_progress.setTextVisible(False)
         self.loading_progress.setMaximumHeight(3)
@@ -547,8 +666,27 @@ class ResultsPage(QWidget):
         """)
         layout.addWidget(self.loading_progress)
 
-        self.scroll_area.viewport().installEventFilter(self)
+        # Connect scroll signal
         self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll)
+
+        # Set up resize handling for button positioning
+        scroll_container.resizeEvent = self._scroll_container_resize_event
+
+    def _scroll_container_resize_event(self, event):
+        """Custom resize event for the scroll container to position the button."""
+        QWidget.resizeEvent(self.scroll_area.parent(), event)
+        self._position_scroll_button()
+
+    def _position_scroll_button(self):
+        """Position the scroll-to-top button at bottom-right of scroll area."""
+        if not hasattr(self, 'scroll_to_top_btn'):
+            return
+        btn = self.scroll_to_top_btn
+        sa = self.scroll_area
+        x = sa.x() + sa.width() - btn.width() - 20
+        y = sa.y() + sa.height() - btn.height() - 20
+        btn.move(x, y)
+        btn.raise_()
 
     def init_overlay(self):
         self.overlay = ImageOverlay(self)
@@ -559,13 +697,15 @@ class ResultsPage(QWidget):
         if hasattr(self, 'overlay') and self.overlay.isVisible():
             self.overlay.resize(self.size())
             self.overlay.move(0, 0)
-        
+
         if self._resize_timer is None:
             self._resize_timer = QTimer(self)
             self._resize_timer.setSingleShot(True)
             self._resize_timer.timeout.connect(self._do_resize)
         self._resize_timer.start(200)
-    
+
+        QTimer.singleShot(0, self._position_scroll_button)
+
     def _do_resize(self):
         if self.update_columns_from_width() and self.wallpapers:
             self.rebuild_grid()
@@ -575,14 +715,15 @@ class ResultsPage(QWidget):
 
     def toggle_filter_panel(self):
         is_visible = self.filter_panel.isVisible()
-        self.filter_panel.setVisible(not is_visible)
-        self.filter_toggle_btn.setText("▲ Filters" if not is_visible else "▼ Filters")
+        if is_visible:
+            self.filter_panel.animate_toggle(False)
+            self.filter_toggle_btn.setText("▼ Filters")
+        else:
+            self.filter_panel.animate_toggle(True)
+            self.filter_toggle_btn.setText("▲ Filters")
 
     def on_filters_changed(self):
         self.start_search(self.current_query)
-
-    def eventFilter(self, obj, event):
-        return super().eventFilter(obj, event)
 
     def update_columns_from_width(self):
         viewport_width = self.scroll_area.viewport().width()
@@ -595,11 +736,31 @@ class ResultsPage(QWidget):
         return False
 
     def on_scroll(self, value):
+        # Show/hide scroll-to-top button
+        scrollbar = self.scroll_area.verticalScrollBar()
+        self.scroll_to_top_btn.setVisible(scrollbar.value() > 200)
+
         if self.is_loading or self.current_page >= self.total_pages:
             return
-        scrollbar = self.scroll_area.verticalScrollBar()
         if scrollbar.maximum() - value < 200:
             self.load_next_page()
+
+    def scroll_to_top(self):
+        """Animate smooth scrolling to the top."""
+        scrollbar = self.scroll_area.verticalScrollBar()
+        current_val = scrollbar.value()
+        if current_val == 0:
+            return
+
+        if self._scroll_animation and self._scroll_animation.state() == QPropertyAnimation.Running:
+            self._scroll_animation.stop()
+
+        self._scroll_animation = QPropertyAnimation(scrollbar, b"value")
+        self._scroll_animation.setDuration(300)
+        self._scroll_animation.setStartValue(current_val)
+        self._scroll_animation.setEndValue(0)
+        self._scroll_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._scroll_animation.start()
 
     def emit_search(self):
         query = self.search_edit.text().strip()
@@ -614,35 +775,35 @@ class ResultsPage(QWidget):
         else:
             self.search_edit.setText(query)
             self.search_edit.setPlaceholderText("Search wallpapers...")
-        
+
         self.current_page = 1
         self.wallpapers = []
         self.total_pages = 1
         self.is_loading = True
-        self.loading_progress.setVisible(True)
+        self._fade_in_loading()
         self.results_container.setCurrentIndex(0)
-        
+
         self._clear_grid()
-        
+
         filter_values = self.filter_panel.get_filter_values()
-        
+
         if self.extension.name == "Local":
             filter_values["download_folder"] = self.settings.download_folder
-        
+
         self._start_search_worker(query, self.current_page, filter_values)
 
     def load_next_page(self):
         if self.is_loading or self.current_page >= self.total_pages:
             return
-        
+
         self.is_loading = True
-        self.loading_progress.setVisible(True)
-        
+        self._fade_in_loading()
+
         filter_values = self.filter_panel.get_filter_values()
-        
+
         if self.extension.name == "Local":
             filter_values["download_folder"] = self.settings.download_folder
-        
+
         self._start_search_worker(self.current_query, self.current_page + 1, filter_values)
 
     def _start_search_worker(self, query, page, filter_values):
@@ -666,7 +827,7 @@ class ResultsPage(QWidget):
 
     def on_search_finished(self, wallpapers, page, total_pages):
         self.is_loading = False
-        self.loading_progress.setVisible(False)
+        self._fade_out_loading()
 
         if page == 1:
             self.wallpapers = wallpapers
@@ -692,14 +853,16 @@ class ResultsPage(QWidget):
             if hasattr(main_win, 'status_bar'):
                 main_win.status_bar.showMessage(f"Loaded {len(wallpapers)} more wallpapers (page {page}/{total_pages})")
 
+        QTimer.singleShot(0, self._position_scroll_button)
+
     def on_search_error(self, error_msg):
         self.is_loading = False
-        self.loading_progress.setVisible(False)
+        self._fade_out_loading()
         QMessageBox.critical(self, "Search Error", error_msg)
 
     def show_no_results(self):
         message = random.choice(NO_RESULTS_MESSAGES)
-        self.no_results_label.setText(message)
+        self.no_results_label.setText(f"🔍\n\n{message}")
         self.results_container.setCurrentIndex(1)
 
     def _clear_grid(self):
@@ -751,7 +914,7 @@ class ResultsPage(QWidget):
         """Get widget from cache or create new one."""
         wall_id = self.extension.get_wallpaper_id(wp_data)
         widget = self._widget_cache.pop(wall_id, None)
-        
+
         if widget is not None:
             widget.data = wp_data
             widget.thumb_url = self.extension.get_thumbnail_url(wp_data)
@@ -765,7 +928,7 @@ class ResultsPage(QWidget):
             widget.download_triggered.connect(self.download_wallpaper)
             widget.expand_triggered.connect(self.expand_wallpaper)
             widget.set_wallpaper_triggered.connect(self.set_as_background)
-        
+
         return widget
 
     def _trim_widget_cache(self):
@@ -808,14 +971,14 @@ class ResultsPage(QWidget):
         main_win = self.window()
         if hasattr(main_win, 'status_bar'):
             main_win.status_bar.showMessage("Setting wallpaper...")
-        
+
         # Disable all wallpaper buttons during the operation
         for i in range(self.grid_layout.count()):
             widget = self.grid_layout.itemAt(i).widget()
             if isinstance(widget, WallpaperWidget):
                 widget.wallpaper_btn.setEnabled(False)
                 widget.wallpaper_btn.setToolTip("Setting wallpaper...")
-        
+
         self.wallpaper_worker = WallpaperSetterWorker(
             wallpaper_data, self.extension, self.settings.download_folder
         )
@@ -831,8 +994,8 @@ class ResultsPage(QWidget):
                 main_win.status_bar.showMessage("Wallpaper set successfully!")
             else:
                 main_win.status_bar.showMessage(f"Failed to set wallpaper: {message}")
-        
-        # Re-enable all buttons and refresh active indicators so only the latest shows ★
+
+        # Re-enable all buttons and refresh active indicators
         for i in range(self.grid_layout.count()):
             widget = self.grid_layout.itemAt(i).widget()
             if isinstance(widget, WallpaperWidget):
@@ -846,17 +1009,17 @@ class ResultsPage(QWidget):
         old_panel = self.filter_panel
         layout.removeWidget(old_panel)
         old_panel.deleteLater()
-        
+
         for widget in self._widget_cache.values():
             widget.deleteLater()
         self._widget_cache.clear()
 
-        self.filter_panel = FilterPanel(self.extension)
+        self.filter_panel = AnimatedFilterPanel(self.extension)
         self.filter_panel.filters_changed.connect(self.on_filters_changed)
         self.filter_panel.setVisible(self.filter_toggle_btn.isChecked())
         layout.insertWidget(1, self.filter_panel)
 
-        # ===== DISABLE FILTER BUTTON IF NO FILTERS AVAILABLE =====
+        # Disable filter button if no filters available
         has_filters = bool(self.extension.get_filters())
         self.filter_toggle_btn.setEnabled(has_filters)
         self.filter_toggle_btn.setVisible(has_filters)
