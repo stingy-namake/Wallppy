@@ -1,13 +1,34 @@
 #!/usr/bin/env python3
+
+import os
 import sys
+
+# Detect and fix GNOME Wayland crash before Qt loads
+if sys.platform.startswith('linux'):
+    # Check if we're on GNOME Wayland
+    session_type = os.environ.get('XDG_SESSION_TYPE', '')
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '')
+    
+    if session_type == 'wayland' and desktop == 'GNOME':
+        # Force X11 only on GNOME Wayland to prevent Qt crashes
+        os.environ['QT_QPA_PLATFORM'] = 'xcb'
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
-
 from core.settings import Settings
 from core.crash_handler import CrashHandler
 from ui.main_window import MainWindow
 import extensions  # registers extensions
 
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
 
 def main():
     # Install crash handler BEFORE creating QApplication
@@ -15,7 +36,10 @@ def main():
     crash.install()
     
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon.fromTheme("wallpaper"))
+    
+    # Set window icon
+    app_icon = QIcon(resource_path(".resources/wallppy.png"))
+    app.setWindowIcon(app_icon)
     
     settings = Settings()
     window = MainWindow(settings)
