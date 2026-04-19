@@ -8,6 +8,7 @@ def is_gnome_wayland():
     """Detect if running on GNOME Wayland using multiple methods"""
     
     # Method 1: Environment variables
+    
     session_type = os.environ.get('XDG_SESSION_TYPE', '')
     desktop = os.environ.get('XDG_CURRENT_DESKTOP', '')
     

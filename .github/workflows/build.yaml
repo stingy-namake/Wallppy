@@ -61,11 +61,7 @@ jobs:
             libxrender1 \
             libxi6 \
             libsm6 \
-            libice6 \
-            libgsettings-qt1 \
-            libglib2.0-bin \
-            dconf-gsettings-backend \
-            gsettings-desktop-schemas
+            libice6
 
       - name: Install Python dependencies
         run: |
@@ -78,38 +74,65 @@ jobs:
           cat > wallppy.spec << 'EOF'
           # -*- mode: python ; coding: utf-8 -*-
           
+          import sys
+          import os
+          from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+          
+          # Collect all core modules
+          core_hiddenimports = collect_submodules('core')
+          ui_hiddenimports = collect_submodules('ui')
+          extensions_hiddenimports = collect_submodules('extensions')
+          
           a = Analysis(
               ['main.py'],
               pathex=[],
               binaries=[],
-              datas=[('.resources', '.resources')],
+              datas=[
+                  ('.resources', '.resources'),
+              ] + collect_data_files('core') + collect_data_files('ui') + collect_data_files('extensions'),
               hiddenimports=[
                   'PIL',
                   'PIL.Image',
                   'PIL._imaging',
+                  'PIL.ImageFile',
+                  'PIL.ImageDraw',
+                  'PIL.ImageFilter',
                   'requests',
                   'urllib3',
                   'certifi',
                   'charset_normalizer',
                   'bs4',
-                  'core.extension',
-                  'core.settings',
-                  'core.workers',
-                  'core.wallpaper_manager',
-                  'core.crash_handler',
-                  'ui.main_window',
-                  'ui.landing_page',
-                  'ui.results_page',
-                  'ui.wallpaper_widget',
-                  'extensions',
-                  'extensions.wallhaven',
-                  'extensions.local',
-                  'extensions.fourkwallpapers',
-              ],
+                  'bs4.builder',
+                  'bs4.element',
+                  'json',
+                  'hashlib',
+                  're',
+                  'os',
+                  'sys',
+                  'pathlib',
+                  'typing',
+                  'threading',
+                  'concurrent.futures',
+                  'logging',
+                  'traceback',
+                  'datetime',
+              ] + core_hiddenimports + ui_hiddenimports + extensions_hiddenimports,
               hookspath=[],
               hooksconfig={},
               runtime_hooks=[],
-              excludes=[],
+              excludes=[
+                  'tkinter',
+                  'matplotlib',
+                  'pandas',
+                  'scipy',
+                  'IPython',
+                  'jupyter',
+                  'notebook',
+                  'sphinx',
+                  'pytest',
+                  'setuptools',
+                  'pip',
+              ],
               noarchive=False,
           )
           
@@ -134,7 +157,7 @@ jobs:
               target_arch=None,
               codesign_identity=None,
               entitlements_file=None,
-              icon='.resources/wallppy.ico',
+              icon='.resources/wallppy.ico' if os.path.exists('.resources/wallppy.ico') else None,
           )
           EOF
 
@@ -150,20 +173,57 @@ jobs:
           pyinstaller --noconfirm wallppy.spec
           
           # Rename the binary
-          mv dist/wallppy "dist/wallppy-linux-${TAG}"
+          if [ -f "dist/wallppy" ]; then
+            mv dist/wallppy "dist/wallppy-linux-${TAG}"
+          else
+            echo "ERROR: Binary not found!"
+            ls -la dist/
+            exit 1
+          fi
           
           # Verify the binary
           echo "Binary size:"
           ls -lh dist/
           
-          # Test that the binary can at least show help (basic sanity check)
+          # Make executable
           chmod +x "dist/wallppy-linux-${TAG}"
+          
+          # Test basic execution (check if it can run without crashing)
+          echo "Testing binary..."
+          timeout 5 "dist/wallppy-linux-${TAG}" --help 2>/dev/null || true
           echo "Binary created successfully"
+
+      - name: Create launcher script for better compatibility
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
+          
+          cat > "dist/wallppy-linux-${TAG}.sh" << 'EOF'
+          #!/bin/bash
+          # Launcher script for wallppy - preserves desktop environment
+          
+          # Get the directory of this script
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          
+          # Ensure DBUS session is available
+          if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+              # Try to get from running session
+              if [ -f ~/.dbus/session-bus/*-0 ]; then
+                  source ~/.dbus/session-bus/*-0 2>/dev/null
+              fi
+          fi
+          
+          # Run the actual binary
+          exec "$SCRIPT_DIR/wallppy-linux-${TAG}" "$@"
+          EOF
+          
+          chmod +x "dist/wallppy-linux-${TAG}.sh"
 
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/wallppy-linux-*
+          files: |
+            dist/wallppy-linux-*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
