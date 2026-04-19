@@ -452,6 +452,13 @@ class ResultsPage(QWidget):
         self._setup_loading_bar_animation()
         self._setup_smooth_scrolling()
 
+    def ensure_filter_collapsed(self):
+        """Force the filter panel to be collapsed, updating UI accordingly."""
+        if self.filter_panel.isVisible():
+            self.filter_panel.animate_toggle(False)
+            self.filter_toggle_btn.setChecked(False)
+            self.filter_toggle_btn.setText("▼ Filters")
+
     def _setup_loading_bar_animation(self):
         """Set up fade animation for the loading progress bar."""
         self.loading_opacity = QGraphicsOpacityEffect(self.loading_progress)

@@ -292,6 +292,7 @@ class MainWindow(QMainWindow):
 
     def go_home(self):
         self._clear_highlighted_status()
+        self.results_page.ensure_filter_collapsed()
         self.landing_page.set_search_text(self.results_page.search_edit.text())
         self.stacked.setCurrentIndex(0)
 
