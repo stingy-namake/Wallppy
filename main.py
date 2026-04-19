@@ -8,7 +8,7 @@ def is_gnome_wayland():
     """Detect if running on GNOME Wayland using multiple methods"""
     
     # Method 1: Environment variables
-    
+
     session_type = os.environ.get('XDG_SESSION_TYPE', '')
     desktop = os.environ.get('XDG_CURRENT_DESKTOP', '')
     
@@ -50,27 +50,13 @@ from core.crash_handler import CrashHandler
 from ui.main_window import MainWindow
 import extensions  # registers extensions
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except AttributeError:
-        base_path = os.path.abspath(".")
-    
-    return os.path.join(base_path, relative_path)
-
 def main():
     # Install crash handler BEFORE creating QApplication
     crash = CrashHandler()
     crash.install()
     
     app = QApplication(sys.argv)
-    
-    # Set window icon
-    app_icon = QIcon(resource_path(".resources/wallppy.png"))
-    app.setWindowIcon(app_icon)
-    
+    app.setApplicationName("Wallppy")    
     settings = Settings()
     window = MainWindow(settings)
     window.show()

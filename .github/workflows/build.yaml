@@ -57,7 +57,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # NOTE: pyinstaller is already pinned in requirements.txt
 
       - name: Build binary with PyInstaller
         run: |
@@ -88,10 +87,31 @@ jobs:
           echo "Linked libraries:"
           ldd "dist/wallppy-linux-${TAG}" 2>&1 | head -20 || true
 
+      - name: Prepare release assets
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
+          
+          # Create a bundled directory for users who prefer tarball
+          mkdir -p "wallppy-${TAG}-linux"
+          cp "dist/wallppy-linux-${TAG}" "wallppy-${TAG}-linux/wallppy"
+          cp -r .resources "wallppy-${TAG}-linux/"
+          cp wallppy-installer.sh "wallppy-${TAG}-linux/"
+          
+          # Create tarball
+          tar -czf "dist/wallppy-${TAG}-linux.tar.gz" "wallppy-${TAG}-linux/"
+          
+          # Copy installer to dist
+          chmod +x wallppy-installer.sh
+          cp wallppy-installer.sh "dist/wallppy-installer.sh"
+
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/wallppy-linux-*
+          files: |
+            dist/wallppy-linux-*
+            dist/wallppy-*-linux.tar.gz
+            dist/wallppy-installer.sh
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -53,19 +53,14 @@
 
 ## 🚀 Installation
 
-### Option 1: Binary (Recommended)
-
-A standalone binary is available at [releases](https://github.com/stingy-namake/Wallppy/releases/).
+### Option 1: One-liner (Recommended)
 
 ```bash
-# Download the binary from the releases page
-chmod +x Wallppy-linux-v*
-./Wallppy-linux-v*
+curl -sL https://github.com/stingy-namake/Wallppy/releases/latest/download/wallppy-installer.sh | bash
 ```
+No Python installation or dependencies required!
 
-No Python installation or dependencies required — just download, make executable, and run.
-
-### Option 1: From Source (Development)
+### Option 2: From Source (Development)
 
 ```bash
 # Clone the repository
@@ -82,7 +77,6 @@ pip install -r requirements.txt
 # Run Wallppy
 python main.py
 ```
-
 ---
 
 ## 📖 Usage
