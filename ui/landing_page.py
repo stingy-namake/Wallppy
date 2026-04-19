@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QFileDialog, QComboBox, QFrame, QApplication, QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QTimer
 from core.settings import Settings
 from core.extension import get_extension_names
 
@@ -12,11 +12,12 @@ class LandingPage(QWidget):
     search_requested = pyqtSignal(str)
     explore_requested = pyqtSignal()
     extension_changed = pyqtSignal(str)
-    status_message = pyqtSignal(str)  # New signal for status updates
+    status_message = pyqtSignal(str)
 
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self._search_timer = None  # Debounce timer for search
         self.init_ui()
         # Initial extension state
         self.on_extension_changed(self.ext_combo.currentText())
@@ -233,6 +234,7 @@ class LandingPage(QWidget):
         if name == "Local":
             self.search_edit.setEnabled(False)
             self.search_edit.setPlaceholderText("Browsing local folder...")
+            # Use stylesheet for disabled appearance instead of non-existent setAlpha
             self.search_edit.setStyleSheet("""
                 QLineEdit {
                     font-size: 15px;
@@ -243,7 +245,6 @@ class LandingPage(QWidget):
                 }
             """)
             self.clear_btn.hide()
-            # Emit status message before starting the scan
             self.status_message.emit("Scanning local folder...")
             self.explore_requested.emit()
         else:
@@ -275,4 +276,5 @@ class LandingPage(QWidget):
             self.dir_edit.setText(folder)
 
     def set_search_text(self, text: str):
+        """Set the search text (called when returning from results page)."""
         self.search_edit.setText(text)
