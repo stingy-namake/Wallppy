@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04  # Use older Ubuntu for better compatibility
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,7 +61,11 @@ jobs:
             libxrender1 \
             libxi6 \
             libsm6 \
-            libice6
+            libice6 \
+            libgsettings-qt1 \
+            libglib2.0-bin \
+            dconf-gsettings-backend \
+            gsettings-desktop-schemas
 
       - name: Install Python dependencies
         run: |
@@ -69,27 +73,92 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Clean and build binary
+      - name: Create PyInstaller spec file
+        run: |
+          cat > wallppy.spec << 'EOF'
+          # -*- mode: python ; coding: utf-8 -*-
+          
+          a = Analysis(
+              ['main.py'],
+              pathex=[],
+              binaries=[],
+              datas=[('.resources', '.resources')],
+              hiddenimports=[
+                  'PIL',
+                  'PIL.Image',
+                  'PIL._imaging',
+                  'requests',
+                  'urllib3',
+                  'certifi',
+                  'charset_normalizer',
+                  'bs4',
+                  'core.extension',
+                  'core.settings',
+                  'core.workers',
+                  'core.wallpaper_manager',
+                  'core.crash_handler',
+                  'ui.main_window',
+                  'ui.landing_page',
+                  'ui.results_page',
+                  'ui.wallpaper_widget',
+                  'extensions',
+                  'extensions.wallhaven',
+                  'extensions.local',
+                  'extensions.fourkwallpapers',
+              ],
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=[],
+              noarchive=False,
+          )
+          
+          pyz = PYZ(a.pure)
+          
+          exe = EXE(
+              pyz,
+              a.scripts,
+              a.binaries,
+              a.datas,
+              [],
+              name='wallppy',
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              upx_exclude=[],
+              runtime_tmpdir=None,
+              console=False,
+              disable_windowed_traceback=False,
+              argv_emulation=False,
+              target_arch=None,
+              codesign_identity=None,
+              entitlements_file=None,
+              icon='.resources/wallppy.ico',
+          )
+          EOF
+
+      - name: Build binary with PyInstaller
         run: |
           TAG="${{ github.ref_name }}"
           if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
-          BINARY_NAME="wallppy-linux-${TAG}"
           
           # Clean any previous builds
-          rm -rf dist/ build/ *.spec
+          rm -rf dist/ build/
           
-          # Build with PyInstaller
-          pyinstaller \
-            --onefile \
-            --name "$BINARY_NAME" \
-            --add-data ".resources:.resources" \
-            --icon ".resources/wallppy.ico" \
-            --noconfirm \
-            main.py
+          # Build with spec file
+          pyinstaller --noconfirm wallppy.spec
+          
+          # Rename the binary
+          mv dist/wallppy "dist/wallppy-linux-${TAG}"
           
           # Verify the binary
           echo "Binary size:"
           ls -lh dist/
+          
+          # Test that the binary can at least show help (basic sanity check)
+          chmod +x "dist/wallppy-linux-${TAG}"
+          echo "Binary created successfully"
 
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v3

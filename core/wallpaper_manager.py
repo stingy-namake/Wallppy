@@ -4,6 +4,7 @@ import subprocess
 import re
 import hashlib
 import shutil
+import sys
 from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -22,9 +23,12 @@ class WallpaperManager:
     def get_cached_path(cls, source_path):
         """Get cached path for a wallpaper copy (prevents file locks on Windows)."""
         cls._ensure_cache_dir()
-        stat = os.stat(source_path)
-        cache_key = hashlib.md5(f"{source_path}:{stat.st_mtime}".encode()).hexdigest()
-        return cls._cache_dir / f"{cache_key}.jpg"
+        try:
+            stat = os.stat(source_path)
+            cache_key = hashlib.md5(f"{source_path}:{stat.st_mtime}".encode()).hexdigest()
+            return cls._cache_dir / f"{cache_key}.jpg"
+        except Exception:
+            return None
 
     @classmethod
     def set_current_wallpaper(cls, path: str):
@@ -37,6 +41,31 @@ class WallpaperManager:
         return cls._current_wallpaper_path
 
     @staticmethod
+    def _find_command(cmd_name):
+        """Find the full path of a command, handling PyInstaller environment."""
+        # Check if running in PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+            # Common paths in PyInstaller environment
+            paths = [
+                '/usr/bin',
+                '/usr/local/bin',
+                '/bin',
+                '/snap/bin',
+                os.environ.get('PATH', '').split(':')
+            ]
+            # Flatten the list
+            all_paths = []
+            for p in paths:
+                if isinstance(p, str) and p not in all_paths:
+                    all_paths.append(p)
+            
+            for path in all_paths:
+                full_path = os.path.join(path, cmd_name)
+                if os.path.exists(full_path) and os.access(full_path, os.X_OK):
+                    return full_path
+        return cmd_name  # Return as-is, let subprocess use PATH
+
+    @staticmethod
     def set_wallpaper(image_path):
         """Set the desktop wallpaper based on the current OS."""
         system = platform.system()
@@ -45,9 +74,9 @@ class WallpaperManager:
 
             if system == "Windows":
                 cached = WallpaperManager.get_cached_path(image_path)
-                if not cached.exists():
+                if cached and not cached.exists():
                     shutil.copy2(image_path, cached)
-                WallpaperManager._set_windows_wallpaper(str(cached))
+                WallpaperManager._set_windows_wallpaper(str(cached if cached else image_path))
             elif system == "Darwin":
                 WallpaperManager._set_macos_wallpaper(image_path)
             elif system == "Linux":
@@ -72,7 +101,7 @@ class WallpaperManager:
     @staticmethod
     def _set_macos_wallpaper(image_path):
         script = f'tell application "Finder" to set desktop picture to POSIX file "{image_path}"'
-        subprocess.run(["osascript", "-e", script], check=True)
+        subprocess.run(["osascript", "-e", script], check=True, timeout=10)
 
     @staticmethod
     def _set_linux_wallpaper(image_path):
@@ -81,11 +110,11 @@ class WallpaperManager:
         file_uri = f"file://{escaped_path}"
         
         # ===== GNOME / Unity / Cinnamon (Wayland & X11) =====
-        # Try multiple gsettings commands - they work on both X11 and Wayland
+        gsettings_path = WallpaperManager._find_command("gsettings")
         gnome_commands = [
-            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri", file_uri],
-            ["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", file_uri],
-            ["gsettings", "set", "org.gnome.desktop.screensaver", "picture-uri", file_uri],
+            [gsettings_path, "set", "org.gnome.desktop.background", "picture-uri", file_uri],
+            [gsettings_path, "set", "org.gnome.desktop.background", "picture-uri-dark", file_uri],
+            [gsettings_path, "set", "org.gnome.desktop.screensaver", "picture-uri", file_uri],
         ]
         
         gnome_success = False
@@ -93,10 +122,11 @@ class WallpaperManager:
             try:
                 result = subprocess.run(
                     cmd, 
-                    check=False,  # Don't raise on error, we'll check return code
+                    check=False,
                     stdout=subprocess.DEVNULL, 
                     stderr=subprocess.PIPE,
-                    timeout=5
+                    timeout=5,
+                    env=os.environ.copy()  # Pass full environment
                 )
                 if result.returncode == 0:
                     gnome_success = True
@@ -126,17 +156,19 @@ class WallpaperManager:
                 with open(cosmic_config, 'w') as f:
                     f.write(new_content)
                 return
-            except Exception as e:
-                print(f"Failed to set COSMIC wallpaper: {e}")
+            except Exception:
+                pass
         
-        # ===== KDE Plasma (X11 and Wayland) =====
+        # ===== KDE Plasma =====
+        plasma_cmd = WallpaperManager._find_command("plasma-apply-wallpaperimage")
         try:
             result = subprocess.run(
-                ["plasma-apply-wallpaperimage", image_path],
+                [plasma_cmd, image_path],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5
+                timeout=5,
+                env=os.environ.copy()
             )
             if result.returncode == 0:
                 return
@@ -144,13 +176,15 @@ class WallpaperManager:
             pass
         
         # ===== Sway (Wayland) =====
+        sway_cmd = WallpaperManager._find_command("swaymsg")
         try:
             result = subprocess.run(
-                ["swaymsg", f"output * bg {image_path} fill"],
+                [sway_cmd, f"output * bg {image_path} fill"],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5
+                timeout=5,
+                env=os.environ.copy()
             )
             if result.returncode == 0:
                 return
@@ -158,21 +192,23 @@ class WallpaperManager:
             pass
         
         # ===== Hyprland (Wayland) =====
+        hyprctl_cmd = WallpaperManager._find_command("hyprctl")
         try:
-            # Preload and set wallpaper
             subprocess.run(
-                ["hyprctl", "hyprpaper", "preload", image_path],
+                [hyprctl_cmd, "hyprpaper", "preload", image_path],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=3
+                timeout=3,
+                env=os.environ.copy()
             )
             result = subprocess.run(
-                ["hyprctl", "hyprpaper", "wallpaper", f",{image_path}"],
+                [hyprctl_cmd, "hyprpaper", "wallpaper", f",{image_path}"],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5
+                timeout=5,
+                env=os.environ.copy()
             )
             if result.returncode == 0:
                 return
@@ -180,15 +216,17 @@ class WallpaperManager:
             pass
         
         # ===== XFCE =====
+        xfconf_cmd = WallpaperManager._find_command("xfconf-query")
         try:
-            # Try to get monitor name
             monitor_name = "monitor0"
             try:
+                xrandr_cmd = WallpaperManager._find_command("xrandr")
                 result = subprocess.run(
-                    ["xrandr", "--listmonitors"],
+                    [xrandr_cmd, "--listmonitors"],
                     capture_output=True,
                     text=True,
-                    timeout=2
+                    timeout=2,
+                    env=os.environ.copy()
                 )
                 monitors = result.stdout.strip().split('\n')
                 if len(monitors) > 1:
@@ -198,15 +236,15 @@ class WallpaperManager:
             except Exception:
                 pass
             
-            # Set for each workspace
             xfce_success = False
             for ws in range(4):
                 try:
                     result = subprocess.run([
-                        "xfconf-query", "-c", "xfce4-desktop", "-p",
+                        xfconf_cmd, "-c", "xfce4-desktop", "-p",
                         f"/backdrop/screen0/{monitor_name}/workspace{ws}/last-image",
                         "-s", image_path
-                    ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+                    ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3,
+                       env=os.environ.copy())
                     if result.returncode == 0:
                         xfce_success = True
                 except Exception:
@@ -217,34 +255,37 @@ class WallpaperManager:
             pass
         
         # ===== feh (minimal WMs) =====
+        feh_cmd = WallpaperManager._find_command("feh")
         try:
             result = subprocess.run(
-                ["feh", "--bg-scale", image_path],
+                [feh_cmd, "--bg-scale", image_path],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5
+                timeout=5,
+                env=os.environ.copy()
             )
             if result.returncode == 0:
                 return
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         
-        # ===== nitrogen (alternative) =====
+        # ===== nitrogen =====
+        nitrogen_cmd = WallpaperManager._find_command("nitrogen")
         try:
             result = subprocess.run(
-                ["nitrogen", "--set-zoom-fill", image_path],
+                [nitrogen_cmd, "--set-zoom-fill", image_path],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5
+                timeout=5,
+                env=os.environ.copy()
             )
             if result.returncode == 0:
                 return
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         
-        # If we get here, nothing worked
         raise OSError("Could not set wallpaper. No supported desktop environment found.")
 
 
@@ -258,10 +299,22 @@ class WallpaperSetterWorker(QThread):
         self.image_data = image_data
         self.extension = extension
         self.download_folder = download_folder
+        self._is_cancelled = False
+
+    def cancel(self):
+        """Cancel the wallpaper setting operation."""
+        self._is_cancelled = True
 
     def run(self):
         try:
+            if self._is_cancelled:
+                return
+            
             image_url = self.extension.get_download_url(self.image_data)
+            if not image_url:
+                self.finished.emit(False, "No download URL available", "")
+                return
+                
             wall_id = self.extension.get_wallpaper_id(self.image_data)
             ext = self.extension.get_file_extension(self.image_data)
             filename = f"wallppy-{wall_id}.{ext}"
@@ -271,6 +324,8 @@ class WallpaperSetterWorker(QThread):
 
             # Already downloaded locally
             if os.path.exists(filepath):
+                if self._is_cancelled:
+                    return
                 success, message = WallpaperManager.set_wallpaper(filepath)
                 if success:
                     WallpaperManager.set_current_wallpaper(filepath)
@@ -279,6 +334,8 @@ class WallpaperSetterWorker(QThread):
 
             # Local file (e.g., from LocalExtension)
             if os.path.exists(image_url):
+                if self._is_cancelled:
+                    return
                 success, message = WallpaperManager.set_wallpaper(image_url)
                 if success:
                     WallpaperManager.set_current_wallpaper(image_url)
@@ -286,27 +343,58 @@ class WallpaperSetterWorker(QThread):
                 return
 
             # Download from online source
+            if self._is_cancelled:
+                return
+                
             self.progress.emit(0)
+            
             from core.workers import get_session
             session = get_session()
-            response = session.get(image_url, stream=True, timeout=30)
-            response.raise_for_status()
+            
+            try:
+                response = session.get(image_url, stream=True, timeout=30)
+                response.raise_for_status()
+            except Exception as e:
+                self.finished.emit(False, f"Download failed: {str(e)}", "")
+                return
 
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
 
-            with open(filepath, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size:
-                            self.progress.emit(int(downloaded * 100 / total_size))
-
-            success, message = WallpaperManager.set_wallpaper(filepath)
-            if success:
-                WallpaperManager.set_current_wallpaper(filepath)
-            self.finished.emit(success, message, filepath)
+            temp_filepath = filepath + ".tmp"
+            
+            try:
+                with open(temp_filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if self._is_cancelled:
+                            f.close()
+                            os.unlink(temp_filepath)
+                            return
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size:
+                                progress_pct = int(downloaded * 100 / total_size)
+                                self.progress.emit(progress_pct)
+                
+                if self._is_cancelled:
+                    os.unlink(temp_filepath)
+                    return
+                
+                shutil.move(temp_filepath, filepath)
+                
+                success, message = WallpaperManager.set_wallpaper(filepath)
+                if success:
+                    WallpaperManager.set_current_wallpaper(filepath)
+                self.finished.emit(success, message, filepath)
+                
+            except Exception as e:
+                if os.path.exists(temp_filepath):
+                    try:
+                        os.unlink(temp_filepath)
+                    except Exception:
+                        pass
+                self.finished.emit(False, f"Download failed: {str(e)}", "")
 
         except Exception as e:
             self.finished.emit(False, str(e), "")
