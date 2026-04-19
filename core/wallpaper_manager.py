@@ -41,6 +41,17 @@ class WallpaperManager:
         return cls._current_wallpaper_path
 
     @staticmethod
+    def _clean_env():
+        """Return environment safe for system binaries.
+        
+        PyInstaller onefile pollutes LD_LIBRARY_PATH with its temp dir,
+        causing gsettings/dconf to load incompatible bundled libs.
+        """
+        env = os.environ.copy()
+        env.pop('LD_LIBRARY_PATH', None)
+        return env
+
+    @staticmethod
     def set_wallpaper(image_path):
         """Set the desktop wallpaper based on the current OS."""
         system = platform.system()
@@ -76,7 +87,11 @@ class WallpaperManager:
     @staticmethod
     def _set_macos_wallpaper(image_path):
         script = f'tell application "Finder" to set desktop picture to POSIX file "{image_path}"'
-        subprocess.run(["osascript", "-e", script], check=True, timeout=10)
+        subprocess.run(
+            ["osascript", "-e", script],
+            env=WallpaperManager._clean_env(),
+            check=True, timeout=10
+        )
 
     @staticmethod
     def _set_gnome_wallpaper_direct(image_path):
@@ -90,11 +105,13 @@ class WallpaperManager:
         try:
             result = subprocess.run(
                 ["dconf", "write", "/org/gnome/desktop/background/picture-uri", f"'{file_uri}'"],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
                 subprocess.run(
                     ["dconf", "write", "/org/gnome/desktop/background/picture-uri-dark", f"'{file_uri}'"],
+                    env=WallpaperManager._clean_env(),
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
                 )
                 success = True
@@ -108,7 +125,7 @@ class WallpaperManager:
         if os.path.exists(keyfile_dir):
             try:
                 # Use gsettings with explicit keyfile backend
-                env = os.environ.copy()
+                env = WallpaperManager._clean_env()
                 env['GSETTINGS_BACKEND'] = 'keyfile'
                 env['DCONF_PROFILE'] = ''
                 
@@ -131,11 +148,16 @@ class WallpaperManager:
                 cmd = f"dbus-launch --exit-with-session gsettings set org.gnome.desktop.background picture-uri '{file_uri}'"
                 result = subprocess.run(
                     ["bash", "-c", cmd],
+                    env=WallpaperManager._clean_env(),
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
                 )
                 if result.returncode == 0:
                     cmd_dark = f"dbus-launch --exit-with-session gsettings set org.gnome.desktop.background picture-uri-dark '{file_uri}'"
-                    subprocess.run(["bash", "-c", cmd_dark], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                    subprocess.run(
+                        ["bash", "-c", cmd_dark],
+                        env=WallpaperManager._clean_env(),
+                        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+                    )
                     success = True
             except Exception:
                 pass
@@ -145,6 +167,7 @@ class WallpaperManager:
             try:
                 result = subprocess.run(
                     ["gconftool-2", "--set", "/desktop/gnome/background/picture_filename", "--type", "string", image_path],
+                    env=WallpaperManager._clean_env(),
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
                 )
                 if result.returncode == 0:
@@ -157,6 +180,7 @@ class WallpaperManager:
             try:
                 result = subprocess.run(
                     ["xfconf-query", "-c", "xfce4-desktop", "-p", "/backdrop/screen0/monitor0/workspace0/last-image", "-s", image_path],
+                    env=WallpaperManager._clean_env(),
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
                 )
                 if result.returncode == 0:
@@ -179,6 +203,7 @@ class WallpaperManager:
         try:
             result = subprocess.run(
                 ["plasma-apply-wallpaperimage", image_path],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
@@ -214,6 +239,7 @@ class WallpaperManager:
         try:
             result = subprocess.run(
                 ["swaymsg", f"output * bg {image_path} fill"],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
@@ -225,10 +251,12 @@ class WallpaperManager:
         try:
             subprocess.run(
                 ["hyprctl", "hyprpaper", "preload", image_path],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3
             )
             result = subprocess.run(
                 ["hyprctl", "hyprpaper", "wallpaper", f",{image_path}"],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
@@ -240,6 +268,7 @@ class WallpaperManager:
         try:
             result = subprocess.run(
                 ["feh", "--bg-scale", image_path],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
@@ -251,6 +280,7 @@ class WallpaperManager:
         try:
             result = subprocess.run(
                 ["nitrogen", "--set-zoom-fill", image_path],
+                env=WallpaperManager._clean_env(),
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:

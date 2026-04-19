@@ -57,7 +57,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          # NOTE: pyinstaller is already pinned in requirements.txt
 
       - name: Build binary with PyInstaller
         run: |
