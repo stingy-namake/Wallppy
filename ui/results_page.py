@@ -489,6 +489,42 @@ class ResultsPage(QWidget):
         self._setup_loading_bar_animation()
         self._setup_smooth_scrolling()
 
+    def _cancel_current_search_worker(self):
+        """Safely cancel and clean up the current search worker."""
+        if self._current_search_worker is None:
+            return
+        
+        worker = self._current_search_worker
+        self._current_search_worker = None
+        
+        # Disconnect signals to prevent callbacks after cancellation
+        try:
+            worker.finished.disconnect()
+            worker.error.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        
+        # Request stop and wait
+        if worker.isRunning():
+            worker.quit()
+            if not worker.wait(500):  # Wait up to 500ms
+                worker.terminate()     # Force if needed
+                worker.wait(100)
+        
+        # Remove from active workers list
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        
+        worker.deleteLater()
+
+    def _cleanup_worker(self, worker):
+        """Clean up a worker after it finishes."""
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        if worker == self._current_search_worker:
+            self._current_search_worker = None
+        worker.deleteLater()
+
     def _setup_loading_bar_animation(self):
         self.loading_opacity = QGraphicsOpacityEffect(self.loading_progress)
         self.loading_progress.setGraphicsEffect(self.loading_opacity)
@@ -869,18 +905,8 @@ class ResultsPage(QWidget):
 
         self._clear_grid()
 
-        # Cancel any ongoing search worker
-        if self._current_search_worker is not None:
-            try:
-                self._current_search_worker.finished.disconnect()
-                self._current_search_worker.error.disconnect()
-            except Exception:
-                pass
-            if self._current_search_worker.isRunning():
-                self._current_search_worker.quit()
-                self._current_search_worker.wait(200)
-            self._current_search_worker.deleteLater()
-            self._current_search_worker = None
+        # Cancel any ongoing search worker safely
+        self._cancel_current_search_worker()
 
         # Prepare filter values with download_folder for Local extension
         filter_values = self._current_filter_values.copy()
@@ -909,6 +935,8 @@ class ResultsPage(QWidget):
         worker = SearchWorker(self.extension, query, page, **filter_values)
         worker.finished.connect(lambda w, p, t, rid=request_id: self._on_search_finished_safe(w, p, t, rid))
         worker.error.connect(lambda msg, rid=request_id: self._on_search_error_safe(msg, rid))
+        worker.finished.connect(lambda *args, w=worker: self._cleanup_worker(w))
+        worker.error.connect(lambda *args, w=worker: self._cleanup_worker(w))
         worker.start()
         self._current_search_worker = worker
         self._active_workers.append(worker)
@@ -916,16 +944,15 @@ class ResultsPage(QWidget):
     def _on_search_finished_safe(self, wallpapers, page, total_pages, request_id):
         if request_id != self._search_request_id:
             return  # Stale result
-        self._current_search_worker = None
         self.on_search_finished(wallpapers, page, total_pages)
 
     def _on_search_error_safe(self, error_msg, request_id):
         if request_id != self._search_request_id:
             return
-        self._current_search_worker = None
         self.on_search_error(error_msg)
 
     def _remove_worker(self, worker):
+        """General worker removal (for download workers, etc.)."""
         if worker in self._active_workers:
             self._active_workers.remove(worker)
         if worker == self._current_search_worker:
@@ -1160,10 +1187,18 @@ class ResultsPage(QWidget):
             self.filter_toggle_btn.setText("▼ Filters")
 
     def closeEvent(self, event):
-        for worker in self._active_workers:
+        """Clean up any running workers when the page is closed."""
+        # Cancel search worker first
+        self._cancel_current_search_worker()
+        
+        # Clean up remaining workers
+        for worker in self._active_workers[:]:  # Iterate over copy
             if worker.isRunning():
                 worker.quit()
                 worker.wait(200)
+            if worker in self._active_workers:
+                self._active_workers.remove(worker)
             worker.deleteLater()
         self._active_workers.clear()
+        
         super().closeEvent(event)
