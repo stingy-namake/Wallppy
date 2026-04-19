@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
     QToolButton, QWidget
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QColor, QLinearGradient, QBrush
 from core.extension import WallpaperExtension
 from core.workers import ThumbnailLoader
@@ -12,7 +12,6 @@ from core.workers import ThumbnailLoader
 THUMB_SIZE = QSize(280, 158)
 
 
-# Shimmer placeholder
 class ShimmerLabel(QLabel):
     """Label with animated shimmer effect while loading."""
     def __init__(self, parent=None):
@@ -47,7 +46,7 @@ class ShimmerLabel(QLabel):
     def start_shimmer(self):
         if self._shimmer_anim:
             return
-        self._shimmer_anim = QPropertyAnimation(self, b"_shimmer_value")
+        self._shimmer_anim = QPropertyAnimation(self, b"shimmerValue")
         self._shimmer_anim.setDuration(1200)
         self._shimmer_anim.setStartValue(-0.5)
         self._shimmer_anim.setEndValue(1.5)
@@ -59,14 +58,16 @@ class ShimmerLabel(QLabel):
         if self._shimmer_anim:
             self._shimmer_anim.stop()
             self._shimmer_anim = None
-        self._shimmer_value = 0.0
-        self.update()
+        self.setShimmerValue(0.0)
 
-    def set_shimmer_value(self, value):
+    def getShimmerValue(self):
+        return self._shimmer_value
+
+    def setShimmerValue(self, value):
         self._shimmer_value = value
         self.update()
 
-    _shimmer_value = 0.0
+    shimmerValue = pyqtProperty(float, fget=getShimmerValue, fset=setShimmerValue)
 
 
 class WallpaperWidget(QFrame):
@@ -84,7 +85,6 @@ class WallpaperWidget(QFrame):
         self._loaded = False
 
         self.setFrameShape(QFrame.StyledPanel)
-        # CSS hover effect instead of QPropertyAnimation
         self.setStyleSheet("""
             WallpaperWidget {
                 background-color: #2a2a2f;

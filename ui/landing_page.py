@@ -1,9 +1,9 @@
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QLabel, QFileDialog, QComboBox, QFrame, QApplication, QGraphicsOpacityEffect
+    QLabel, QFileDialog, QComboBox, QFrame, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from core.settings import Settings
 from core.extension import get_extension_names
 
@@ -17,7 +17,13 @@ class LandingPage(QWidget):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.settings = settings
-        self._search_timer = None  # Debounce timer for search
+        
+        # Debounce timer for search
+        self._search_debounce_timer = QTimer()
+        self._search_debounce_timer.setSingleShot(True)
+        self._search_debounce_timer.timeout.connect(self._debounced_search)
+        self._pending_search_query = ""
+        
         self.init_ui()
         # Initial extension state
         self.on_extension_changed(self.ext_combo.currentText())
@@ -217,10 +223,22 @@ class LandingPage(QWidget):
 
     def on_search_text_changed(self, text):
         self.clear_btn.setVisible(bool(text))
+        # Debounce the search (optional - currently only search on Enter)
+        self._pending_search_query = text.strip()
+        self._search_debounce_timer.stop()
+        self._search_debounce_timer.start(300)
+
+    def _debounced_search(self):
+        """Called after user stops typing (optional live search)."""
+        # Uncomment to enable live search:
+        # if self._pending_search_query and self.search_edit.isEnabled():
+        #     self.search_requested.emit(self._pending_search_query)
+        pass
 
     def clear_search(self):
         self.search_edit.clear()
         self.search_edit.setFocus()
+        self._search_debounce_timer.stop()
 
     def emit_explore(self):
         self.explore_requested.emit()
@@ -234,7 +252,6 @@ class LandingPage(QWidget):
         if name == "Local":
             self.search_edit.setEnabled(False)
             self.search_edit.setPlaceholderText("Browsing local folder...")
-            # Use stylesheet for disabled appearance instead of non-existent setAlpha
             self.search_edit.setStyleSheet("""
                 QLineEdit {
                     font-size: 15px;
@@ -267,6 +284,7 @@ class LandingPage(QWidget):
             return
         query = self.search_edit.text().strip()
         if query:
+            self._search_debounce_timer.stop()
             self.search_requested.emit(query)
 
     def choose_directory(self):

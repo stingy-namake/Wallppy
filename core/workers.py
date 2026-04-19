@@ -45,21 +45,39 @@ class CrashAwareThread(QThread):
 
 
 class SearchWorker(CrashAwareThread):
-    finished = pyqtSignal(list, int, int)  # wallpapers, page, total_pages
+    finished = pyqtSignal(list, int, int)
     error = pyqtSignal(str)
-
+    
     def __init__(self, extension: WallpaperExtension, query: str, page: int = 1, **kwargs):
         super().__init__()
         self.extension = extension
         self.query = query
         self.page = page
         self.kwargs = kwargs
-
+    
     def _do_run(self):
         try:
-            wallpapers = self.extension.search(self.query, self.page, **self.kwargs)
-            total_pages = self.extension.get_total_pages(self.query, **self.kwargs)
+            # Add timeout protection
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Search timed out after 30 seconds")
+            
+            # Set 30 second timeout (only works on Unix)
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+            
+            try:
+                wallpapers = self.extension.search(self.query, self.page, **self.kwargs)
+                total_pages = self.extension.get_total_pages(self.query, **self.kwargs)
+            finally:
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)
+            
             self.finished.emit(wallpapers, self.page, total_pages)
+        except TimeoutError as e:
+            self.error.emit("Search timed out. Please try again.")
         except Exception as e:
             self.error.emit(str(e))
 
