@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   build:
+    # Use a more desktop-like environment
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
@@ -21,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies for Qt5
+      - name: Install full desktop environment dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -43,29 +44,23 @@ jobs:
             libfreetype6 \
             libx11-xcb1 \
             libxcb-glx0 \
-            libxcb-dri2-0 \
-            libxcb-dri3-0 \
-            libxcb-present0 \
-            libxcb-composite0 \
-            libxcb-cursor0 \
-            libxcb-damage0 \
-            libxcb-dpms0 \
-            libxcb-record0 \
-            libxcb-res0 \
-            libxcb-screensaver0 \
-            libxcb-shm0 \
-            libxcb-xv0 \
-            libxcb-xvmc0 \
             libglib2.0-0 \
             libdbus-1-3 \
             libxrender1 \
             libxi6 \
             libsm6 \
             libice6 \
-            libgsettings-qt1 \
-            libglib2.0-bin \
+            dbus-x11 \
+            dconf-cli \
             dconf-gsettings-backend \
-            gsettings-desktop-schemas
+            gsettings-desktop-schemas \
+            libglib2.0-bin
+
+      - name: Start virtual D-Bus session
+        run: |
+          # Start a dbus session for the build (helps PyInstaller find proper libraries)
+          export DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address)
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         run: |
@@ -73,92 +68,38 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Create PyInstaller spec file
-        run: |
-          cat > wallppy.spec << 'EOF'
-          # -*- mode: python ; coding: utf-8 -*-
-          
-          a = Analysis(
-              ['main.py'],
-              pathex=[],
-              binaries=[],
-              datas=[('.resources', '.resources')],
-              hiddenimports=[
-                  'PIL',
-                  'PIL.Image',
-                  'PIL._imaging',
-                  'requests',
-                  'urllib3',
-                  'certifi',
-                  'charset_normalizer',
-                  'bs4',
-                  'core.extension',
-                  'core.settings',
-                  'core.workers',
-                  'core.wallpaper_manager',
-                  'core.crash_handler',
-                  'ui.main_window',
-                  'ui.landing_page',
-                  'ui.results_page',
-                  'ui.wallpaper_widget',
-                  'extensions',
-                  'extensions.wallhaven',
-                  'extensions.local',
-                  'extensions.fourkwallpapers',
-              ],
-              hookspath=[],
-              hooksconfig={},
-              runtime_hooks=[],
-              excludes=[],
-              noarchive=False,
-          )
-          
-          pyz = PYZ(a.pure)
-          
-          exe = EXE(
-              pyz,
-              a.scripts,
-              a.binaries,
-              a.datas,
-              [],
-              name='wallppy',
-              debug=False,
-              bootloader_ignore_signals=False,
-              strip=False,
-              upx=True,
-              upx_exclude=[],
-              runtime_tmpdir=None,
-              console=False,
-              disable_windowed_traceback=False,
-              argv_emulation=False,
-              target_arch=None,
-              codesign_identity=None,
-              entitlements_file=None,
-              icon='.resources/wallppy.ico',
-          )
-          EOF
-
       - name: Build binary with PyInstaller
         run: |
           TAG="${{ github.ref_name }}"
           if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
           
-          # Clean any previous builds
-          rm -rf dist/ build/
+          # Clean previous builds
+          rm -rf dist/ build/ *.spec
           
-          # Build with spec file
-          pyinstaller --noconfirm wallppy.spec
-          
-          # Rename the binary
-          mv dist/wallppy "dist/wallppy-linux-${TAG}"
+          # Build with PyInstaller - CRITICAL: do NOT strip symbols
+          # Stripping can break dynamic library loading
+          pyinstaller \
+            --onefile \
+            --name "wallppy-linux-${TAG}" \
+            --add-data ".resources:.resources" \
+            --icon ".resources/wallppy.ico" \
+            --noconfirm \
+            --noupx \
+            --strip=False \
+            main.py
           
           # Verify the binary
           echo "Binary size:"
           ls -lh dist/
           
-          # Test that the binary can at least show help (basic sanity check)
+          # Make executable
           chmod +x "dist/wallppy-linux-${TAG}"
-          echo "Binary created successfully"
+
+      - name: Test binary can run
+        run: |
+          # Test that the binary doesn't immediately crash
+          timeout 2 "dist/wallppy-linux-${{ github.ref_name }}" --help 2>&1 || true
+          echo "Binary test completed"
 
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v3
