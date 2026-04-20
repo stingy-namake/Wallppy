@@ -1,2 +1,2 @@
 
-    app = QApplication(sys.argv)
+    # Method 1: Environment variables
