@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -58,15 +59,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Determine version name
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            BRANCH="${{ github.ref_name }}"
+            SAFE_BRANCH="${BRANCH//\//-}"   # replace / with -
+            SHA_SHORT=$(git rev-parse --short HEAD)
+            echo "TAG=${SAFE_BRANCH}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build binary with PyInstaller
         run: |
-          TAG="${{ github.ref_name }}"
-          if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
+          TAG="${{ steps.version.outputs.TAG }}"
+          echo "Building version: $TAG"
           
-          # Clean previous builds
           rm -rf dist/ build/ *.spec
           
-          # Build with PyInstaller
           pyinstaller \
             --onefile \
             --name "wallppy-linux-${TAG}" \
@@ -76,36 +87,40 @@ jobs:
             --noupx \
             main.py
           
-          # Verify the binary
           echo "Binary size:"
           ls -lh dist/
           
-          # Make executable
           chmod +x "dist/wallppy-linux-${TAG}"
           
-          # Show linked libraries (for debugging)
           echo "Linked libraries:"
           ldd "dist/wallppy-linux-${TAG}" 2>&1 | head -20 || true
 
       - name: Prepare release assets
         run: |
-          TAG="${{ github.ref_name }}"
-          if [ "$TAG" = "manual" ]; then TAG="${GITHUB_REF#refs/heads/}"; fi
+          TAG="${{ steps.version.outputs.TAG }}"
           
-          # Create a bundled directory for users who prefer tarball
           mkdir -p "wallppy-${TAG}-linux"
           cp "dist/wallppy-linux-${TAG}" "wallppy-${TAG}-linux/wallppy"
           cp -r .resources "wallppy-${TAG}-linux/"
           cp wallppy-installer.sh "wallppy-${TAG}-linux/"
           
-          # Create tarball
           tar -czf "dist/wallppy-${TAG}-linux.tar.gz" "wallppy-${TAG}-linux/"
           
-          # Copy installer to dist
           chmod +x wallppy-installer.sh
           cp wallppy-installer.sh "dist/wallppy-installer.sh"
 
-      - name: Upload binary to GitHub Release
+      - name: Upload artifacts (always available)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallppy-linux-${{ steps.version.outputs.TAG }}
+          path: |
+            dist/wallppy-linux-*
+            dist/wallppy-*-linux.tar.gz
+            dist/wallppy-installer.sh
+          retention-days: 7
+
+      - name: Upload to GitHub Release (only on tag push)
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v3
         with:
           files: |
