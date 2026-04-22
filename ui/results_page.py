@@ -1090,7 +1090,6 @@ class ResultsPage(QWidget):
         else:
             self.wallpapers.extend(wallpapers)
             self.current_page = page
-            self.total_pages = total_pages
             self.append_to_grid(wallpapers)
             main_win = self.window()
             if hasattr(main_win, 'status_bar'):
@@ -1150,7 +1149,7 @@ class ResultsPage(QWidget):
             wall_id = self.extension.get_wallpaper_id(wp)
             widget = self._widget_by_id.get(wall_id)
             if widget is None:
-                widget = self._get_or_create_widget(wp)
+                widget = self._get_or_create_widget(wp, global_index)
                 self._widget_by_id[wall_id] = widget
             self.grid_layout.addWidget(widget, row, col)
 

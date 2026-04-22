@@ -1,0 +1,181 @@
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from typing import List, Dict, Any
+from bs4 import BeautifulSoup
+from core.extension import WallpaperExtension, register_extension
+
+
+CATEGORIES = [
+    {"id": "abstract", "label": "Abstract"},
+    {"id": "animals", "label": "Animals"},
+    {"id": "anime", "label": "Anime"},
+    {"id": "car", "label": "Car"},
+    {"id": "celebration", "label": "Celebration"},
+    {"id": "city", "label": "City"},
+    {"id": "fantasy", "label": "Fantasy"},
+    {"id": "flowers", "label": "Flowers"},
+    {"id": "food", "label": "Food"},
+    {"id": "funny", "label": "Funny"},
+    {"id": "life", "label": "Life"},
+    {"id": "military", "label": "Military"},
+    {"id": "music", "label": "Music"},
+    {"id": "nature", "label": "Nature"},
+    {"id": "quotes", "label": "Quotes"},
+    {"id": "space", "label": "Space"},
+    {"id": "sports", "label": "Sports"},
+    {"id": "technology", "label": "Technology"},
+    {"id": "textures", "label": "Textures"},
+    {"id": "video-games", "label": "Video Games"},
+]
+
+RESOLUTIONS = [
+    {"id": "1000x563", "label": "1000x563 (HD)", "width": 1000, "height": 563},
+    {"id": "3840x2160", "label": "3840x2160 (4K)", "width": 3840, "height": 2160},
+]
+
+
+_cached_resolutions = {}
+
+class BackieeExtension(WallpaperExtension):
+    """backiee.com scraper implementation."""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "Backiee"
+        self.base_url = "https://backiee.com"
+        self._last_total = 0
+        
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        })
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(
+            pool_connections=5,
+            pool_maxsize=10,
+            max_retries=retry_strategy
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+    
+    def _build_url(self, query: str, page: int) -> str:
+        if query:
+            query_lower = query.lower().strip()
+            if not query_lower:
+                return f"{self.base_url}/latest?page={page}"
+            for cat in CATEGORIES:
+                if cat["id"].lower() == query_lower:
+                    return f"{self.base_url}/categories/{cat['id']}/?page={page}"
+            return f"{self.base_url}/search/{query_lower}?page={page}"
+        return f"{self.base_url}/latest?page={page}"
+    
+    def search(self, query: str, page: int = 1, **kwargs) -> List[Dict[str, Any]]:
+        category = kwargs.get('categories', '')
+        if category and not query:
+            query = category
+        
+        url = self._build_url(query, page)
+        
+        try:
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            wallpapers = []
+            seen_ids = set()
+            
+            links = soup.find_all('a', href=lambda x: x and '/wallpaper/' in str(x))
+            
+            for link in links:
+                href = link.get('href', '')
+                parts = href.rstrip('/').split('/')
+                if not parts[-1].isdigit():
+                    continue
+                wall_id = parts[-1]
+                
+                if wall_id in seen_ids:
+                    continue
+                seen_ids.add(wall_id)
+                
+                slug = href.replace(self.base_url, '').strip('/')
+                
+                # Image ID = page ID + 100000
+                img_id = str(int(wall_id) + 100000)
+                
+                wallpapers.append({
+                    "id": wall_id,
+                    "img_id": img_id,
+                    "slug": slug,
+                    "title": slug.replace('-', ' ').replace('/', ' ').title(),
+                    "page_url": href,
+                    "thumbnail_url": f"{self.base_url}/static/wallpapers/456x257/{img_id}.jpg",
+                    "resolution": "?",
+                    "query": query,
+                })
+            
+            self._last_total = len(wallpapers)
+            
+            if len(wallpapers) > 24:
+                wallpapers = wallpapers[:24]
+            
+            return wallpapers
+        except Exception as e:
+            print(f"Backiee error: {e}")
+            return []
+    
+    def get_total_pages(self, query: str, **kwargs) -> int:
+        if self._last_total >= 10:
+            return 999
+        return self._last_total if self._last_total > 0 else 1
+    
+    def get_thumbnail_url(self, wallpaper_data: Dict[str, Any]) -> str:
+        return wallpaper_data.get("thumbnail_url", "")
+    
+    def get_download_url(self, wallpaper_data: Dict[str, Any], resolution: str = None) -> str:
+        img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
+        
+        url = f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
+        
+        if resolution:
+            url = f"{self.base_url}/static/wallpapers/{resolution}/{img_id}.jpg"
+        
+        return url
+    
+    def get_wallpaper_id(self, wallpaper_data: Dict[str, Any]) -> str:
+        return str(wallpaper_data.get("id", ""))
+    
+    def get_file_extension(self, wallpaper_data: Dict[str, Any]) -> str:
+        return "jpg"
+    
+    def get_resolution(self, wallpaper_data: Dict[str, Any]) -> str:
+        res = wallpaper_data.get("resolution", "?")
+        if res != "?":
+            return res
+        img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
+        if img_id:
+            for r in RESOLUTIONS:
+                url = f"{self.base_url}/static/wallpapers/{r['id']}/{img_id}.jpg"
+                resp = self.session.head(url, timeout=5)
+                if resp.status_code == 200:
+                    return f"{r['width']}x{r['height']}"
+        return "1920x1080"
+    
+    def get_filters(self) -> Dict[str, Any]:
+        return {
+            "categories": {
+                "type": "dropdown",
+                "label": "Category",
+                "options": [{"id": cat["id"], "label": cat["label"], "default": cat["id"] == "anime"} for cat in CATEGORIES]
+            },
+            "resolution": {
+                "type": "dropdown",
+                "label": "Resolution",
+                "options": [{"id": r["id"], "label": r["label"], "default": r["id"] == "1000x563"} for r in RESOLUTIONS]
+            },
+        }

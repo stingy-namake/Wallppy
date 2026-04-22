@@ -78,6 +78,7 @@ class WallhavenExtension(WallpaperExtension):
             "categories": category,
             "purity": purity,
             "page": page,
+            "per_page": 24,
         }
         
         # Add sorting parameters

@@ -460,7 +460,13 @@ class WallpaperWidget(QFrame):
             bool(direct and current_abs == os.path.abspath(direct))
         )
 
-    def load_thumbnail(self):
+    def load_thumbnail(self, delay_ms: int = 0):
+        if delay_ms > 0:
+            QTimer.singleShot(delay_ms, lambda: self._do_load_thumbnail())
+        else:
+            self._do_load_thumbnail()
+
+    def _do_load_thumbnail(self):
         if self._loaded or not self.thumb_url:
             if not self.thumb_url:
                 self.thumb_label.stop_shimmer()
@@ -482,7 +488,7 @@ class WallpaperWidget(QFrame):
             self.update_downloaded_status()
             self.update_active_status()
             return
-        from core.workers import ThumbnailLoader # Lazy import to avoid circular dependency
+        from core.workers import ThumbnailLoader
         self._thumb_loader = ThumbnailLoader(self.thumb_url)
         self._thumb_loader.loaded.connect(self.set_thumbnail)
         self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
