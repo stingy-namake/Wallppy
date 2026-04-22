@@ -13,6 +13,7 @@ from core.settings import Settings
 from core.workers import SearchWorker, DownloadWorker, ThumbnailLoader, get_session
 from core.wallpaper_manager import WallpaperSetterWorker
 from .wallpaper_widget import WallpaperWidget
+from .wallpaper_widget import WallpaperWidget, AnimatedToolButton
 
 
 THUMB_SIZE = QSize(280, 158)
@@ -646,62 +647,92 @@ class ResultsPage(QWidget):
         # Top bar
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
-
-        self.home_btn = QPushButton("⌂")
+        
+        self.home_btn = AnimatedToolButton(no_glow=True)
         self.home_btn.setToolTip("Back to home")
         self.home_btn.setFixedSize(36, 36)
         self.home_btn.setCursor(Qt.PointingHandCursor)
+
+        # SVG da casinha — stroke fino, centralizado
+        _home_svg = b"""<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 8.5L9 2L16 8.5V16H11.5V11.5H6.5V16H2V8.5Z"
+                stroke="#e8e8f0" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>"""
+        _home_px = QPixmap()
+        _home_px.loadFromData(_home_svg, "SVG")
+        self.home_btn.setIcon(QIcon(_home_px))
+        self.home_btn.setIconSize(QSize(18, 18))
+
         self.home_btn.setStyleSheet(f"""
-            QPushButton {{
+            AnimatedToolButton {{
                 background-color: transparent;
                 border: 1px solid {COLOR_BORDER};
                 border-radius: 18px;
-                font-size: 20px;
-                color: {COLOR_TEXT_PRIMARY};
                 padding: 0px;
             }}
-            QPushButton:hover {{
+            AnimatedToolButton:hover {{
                 background-color: {COLOR_BORDER_HOVER};
-                border-color: {COLOR_ACCENT_PRIMARY};
+                border-color: {COLOR_BORDER_HOVER};
             }}
         """)
         self.home_btn.clicked.connect(self.home_requested.emit)
         top_bar.addWidget(self.home_btn)
 
-        # Search bar
-        search_container = QWidget()
+# ── Search bar ────────────────────────────────────────────────────
+        # Container com fundo semitransparente, borda sutil e ícone SVG inline
+        search_container = QFrame()
+        search_container.setFixedHeight(40)
+        search_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(255, 255, 255, 0.04);
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }}
+            QFrame:focus-within {{
+                border-color: rgba(0, 212, 255, 0.55);
+                background-color: rgba(255, 255, 255, 0.06);
+            }}
+        """)
+
         search_layout = QHBoxLayout(search_container)
-        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setContentsMargins(12, 0, 6, 0)
         search_layout.setSpacing(8)
 
+        # Ícone SVG embutido — lupa moderna com stroke fino
         search_icon = QLabel()
-        search_icon.setPixmap(QIcon.fromTheme("system-search").pixmap(16, 16))
-        search_layout.addWidget(search_icon)
+        search_icon.setFixedSize(16, 16)
+        search_icon.setStyleSheet("background: transparent; border: none;")
+        svg_bytes = b"""<svg width="16" height="16" viewBox="0 0 16 16"
+                fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="#6a6a8a" stroke-width="1.5"/>
+            <line x1="10.0" y1="10.0" x2="14.0" y2="14.0"
+                  stroke="#6a6a8a" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>"""
+        icon_pixmap = QPixmap()
+        icon_pixmap.loadFromData(svg_bytes, "SVG")
+        search_icon.setPixmap(icon_pixmap)
+        search_layout.addWidget(search_icon, 0, Qt.AlignVCenter)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search wallpapers...")
-        self.search_edit.setFixedHeight(36)
+        self.search_edit.setFrame(False)          # sem borda própria — o container já tem
         self.search_edit.setStyleSheet(f"""
             QLineEdit {{
-                font-size: 14px;
-                padding: 0px 12px;
-                border-radius: 8px;
-                background-color: {COLOR_BG_TERTIARY};
-                border: 1px solid {COLOR_BORDER};
+                font-size: 13px;
+                background: transparent;
+                border: none;
                 color: {COLOR_TEXT_PRIMARY};
                 selection-background-color: {COLOR_ACCENT_PRIMARY};
+                padding: 0px;
             }}
-            QLineEdit:focus {{
-                border: 1px solid {COLOR_ACCENT_PRIMARY};
-            }}
-            QLineEdit:hover:!focus {{
-                border-color: {COLOR_BORDER_HOVER};
+            QLineEdit::placeholder {{
+                color: {COLOR_TEXT_MUTED};
             }}
         """)
         self.search_edit.returnPressed.connect(self.emit_search)
-        search_layout.addWidget(self.search_edit, 3)
+        search_layout.addWidget(self.search_edit, 1, Qt.AlignVCenter)
 
-        self.filter_toggle_btn = QToolButton()
+        self.filter_toggle_btn = AnimatedToolButton()
         self.filter_toggle_btn.setText("▼ Filters")
         self.filter_toggle_btn.setToolTip("Show/hide filters")
         self.filter_toggle_btn.setCheckable(True)
@@ -709,60 +740,49 @@ class ResultsPage(QWidget):
         self.filter_toggle_btn.setFixedSize(100, 36)
         self.filter_toggle_btn.setCursor(Qt.PointingHandCursor)
         self.filter_toggle_btn.setStyleSheet(f"""
-            QToolButton {{
+            AnimatedToolButton {{
                 background-color: {COLOR_BG_TERTIARY};
                 border-radius: 8px;
-                padding: 0px 12px;
-                min-height: 30px;
-                color: {COLOR_TEXT_PRIMARY};
                 border: 1px solid {COLOR_BORDER};
+                color: {COLOR_TEXT_PRIMARY};
                 font-size: 13px;
                 font-weight: 500;
+                padding: 0px 12px;
             }}
-            QToolButton:hover {{
-                background-color: {COLOR_BORDER_HOVER};
-                border-color: {COLOR_ACCENT_PRIMARY};
-            }}
-            QToolButton:checked {{
-                background-color: {COLOR_ACCENT_PRIMARY};
-                color: {COLOR_BG_PRIMARY};
-                border-color: {COLOR_ACCENT_PRIMARY};
-                font-weight: 600;
-            }}
-            QToolButton:disabled {{
+            AnimatedToolButton:disabled {{
                 background-color: {COLOR_BG_SECONDARY};
                 color: {COLOR_TEXT_MUTED};
                 border-color: {COLOR_BORDER};
             }}
         """)
         self.filter_toggle_btn.clicked.connect(self.toggle_filter_panel)
-        search_layout.addWidget(self.filter_toggle_btn)
 
-        self.search_btn = QPushButton("Search")
+        self.search_btn = AnimatedToolButton()
+        self.search_btn.setText("Search")
         self.search_btn.setFixedSize(100, 36)
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.clicked.connect(self.emit_search)
+        # Troque o stylesheet do search_btn por:
         self.search_btn.setStyleSheet(f"""
-            QPushButton {{
+            AnimatedToolButton {{
                 background-color: {COLOR_ACCENT_PRIMARY};
                 color: {COLOR_BG_PRIMARY};
                 border-radius: 8px;
-                padding: 0px 16px;
-                min-height: 30px;
+                border: 1px solid {COLOR_ACCENT_PRIMARY};
                 font-size: 13px;
                 font-weight: 600;
-                border: none;
+                padding: 0px 16px;
             }}
-            QPushButton:hover {{
-                background-color: #33ddff;
-            }}
-            QPushButton:pressed {{
-                background-color: #00a8cc;
+            AnimatedToolButton:disabled {{
+                background-color: {COLOR_BORDER};
+                color: {COLOR_TEXT_MUTED};
+                border-color: {COLOR_BORDER};
             }}
         """)
-        search_layout.addWidget(self.search_btn)
 
         top_bar.addWidget(search_container, 3)
+        top_bar.addWidget(self.filter_toggle_btn)  # ← aqui
+        top_bar.addWidget(self.search_btn)         # ← aqui
         top_bar.addStretch()
         layout.addLayout(top_bar)
 
@@ -812,11 +832,12 @@ class ResultsPage(QWidget):
         self.scroll_area.setWidget(grid_container)
         scroll_layout.addWidget(self.scroll_area)
 
-        self.scroll_to_top_btn = QPushButton("↑")
+        self.scroll_to_top_btn = AnimatedToolButton(no_glow=True)
+        self.scroll_to_top_btn.setText("↑")
         self.scroll_to_top_btn.setFixedSize(40, 40)
         self.scroll_to_top_btn.setCursor(Qt.PointingHandCursor)
         self.scroll_to_top_btn.setStyleSheet(f"""
-            QPushButton {{
+            AnimatedToolButton {{
                 background-color: {COLOR_ACCENT_PRIMARY};
                 border-radius: 20px;
                 color: {COLOR_BG_PRIMARY};
@@ -824,8 +845,9 @@ class ResultsPage(QWidget):
                 font-weight: bold;
                 border: none;
             }}
-            QPushButton:hover {{
-                background-color: #33ddff;
+            AnimatedToolButton:disabled {{
+                background-color: {COLOR_BORDER};
+                color: {COLOR_TEXT_MUTED};
             }}
         """)
         self.scroll_to_top_btn.clicked.connect(self.scroll_to_top)
