@@ -9,10 +9,11 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import (
     QPixmap, QPainter, QColor, QLinearGradient, QRadialGradient,
-    QBrush, QPen
+    QBrush, QPen, QIcon
 )
-from core.extension import WallpaperExtension
-from core.workers import ThumbnailLoader
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from core.extension import WallpaperExtension
 
 THUMB_SIZE = QSize(280, 158)
 
@@ -240,8 +241,9 @@ class WallpaperWidget(QFrame):
     expand_triggered        = pyqtSignal(dict)
     set_wallpaper_triggered = pyqtSignal(dict)
 
-    def __init__(self, extension: WallpaperExtension, wallpaper_data: dict,
+    def __init__(self, extension: "WallpaperExtension", wallpaper_data: dict,
                  download_folder: str, parent=None):
+        from core.extension import WallpaperExtension  # lazy — evita import circular
         super().__init__(parent)
         self.extension             = extension
         self.data                  = wallpaper_data
@@ -366,21 +368,41 @@ class WallpaperWidget(QFrame):
             }}
         """
 
+        _expand_svg = b'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <polyline points="9,1 13,1 13,5" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>\n  <polyline points="5,13 1,13 1,9" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>\n  <line x1="13" y1="1" x2="8.5" y2="5.5" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round"/>\n  <line x1="1" y1="13" x2="5.5" y2="8.5" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round"/>\n</svg>'
+        _expand_px = QPixmap()
+        _expand_px.loadFromData(_expand_svg, "SVG")
+
         self.expand_btn = AnimatedToolButton()
-        self.expand_btn.setText("⤢")
-        self.expand_btn.setToolTip("Expand preview")
+
+        self.expand_btn.setIcon(QIcon(_expand_px))
+        self.expand_btn.setIconSize(QSize(14, 14))
+        self.expand_btn.setToolTip("Expandir preview")
+
         self.expand_btn.setCursor(Qt.PointingHandCursor)
         self.expand_btn.setStyleSheet(BTN_STYLE)
-        self.expand_btn.setFixedSize(30, 22)
+        self.expand_btn.setFixedSize(30, 26)
         self.expand_btn.clicked.connect(lambda: self.expand_triggered.emit(self.data))
         bar.addWidget(self.expand_btn)
 
+        _monitor_svg = b'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <rect x="1" y="1.5" width="12" height="8.5" rx="1.5" stroke="#6b6b88" stroke-width="1.4"/>\n  <line x1="5" y1="12.5" x2="9" y2="12.5" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round"/>\n  <line x1="7" y1="10" x2="7" y2="12.5" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round"/>\n</svg>'
+        _monitor_px = QPixmap()
+        _monitor_px.loadFromData(_monitor_svg, "SVG")
+        self._monitor_px = _monitor_px
+
+        _hourglass_svg = b'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <path d="M3 1h8M3 13h8M4 1c0 3 3 5 3 6s-3 3-3 6M10 1c0 3-3 5-3 6s3 3 3 6" stroke="#6b6b88" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>\n</svg>'
+        _hourglass_px = QPixmap()
+        _hourglass_px.loadFromData(_hourglass_svg, "SVG")
+        self._hourglass_px = _hourglass_px
+
         self.wallpaper_btn = AnimatedToolButton()
-        self.wallpaper_btn.setText("🖵")
-        self.wallpaper_btn.setToolTip("Set as wallpaper")
+
+        self.wallpaper_btn.setIcon(QIcon(_monitor_px))
+        self.wallpaper_btn.setIconSize(QSize(14, 14))
+        self.wallpaper_btn.setToolTip("Definir como papel de parede")
+
         self.wallpaper_btn.setCursor(Qt.PointingHandCursor)
         self.wallpaper_btn.setStyleSheet(BTN_STYLE)
-        self.wallpaper_btn.setFixedSize(30, 22)
+        self.wallpaper_btn.setFixedSize(30, 26)
         self.wallpaper_btn.clicked.connect(self._on_set_wallpaper_clicked)
         bar.addWidget(self.wallpaper_btn)
 
@@ -393,14 +415,14 @@ class WallpaperWidget(QFrame):
             return
         self._is_setting_wallpaper = True
         self.wallpaper_btn.setEnabled(False)
-        self.wallpaper_btn.setText("⏳")
+        self.wallpaper_btn.setIcon(QIcon(self._hourglass_px))
         self.wallpaper_btn.setToolTip("Aplicando…")
         self.set_wallpaper_triggered.emit(self.data)
 
     def on_wallpaper_set_complete(self, success: bool):
         self._is_setting_wallpaper = False
         self.wallpaper_btn.setEnabled(True)
-        self.wallpaper_btn.setText("🖵")
+        self.wallpaper_btn.setIcon(QIcon(self._monitor_px))
         self.wallpaper_btn.setToolTip("Definir como papel de parede")
         self.update_active_status()
 
@@ -466,6 +488,7 @@ class WallpaperWidget(QFrame):
             self.update_downloaded_status()
             self.update_active_status()
             return
+        from core.workers import ThumbnailLoader  # lazy — evita import circular
         self._thumb_loader = ThumbnailLoader(self.thumb_url)
         self._thumb_loader.loaded.connect(self.set_thumbnail)
         self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
