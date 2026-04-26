@@ -199,7 +199,7 @@ class AnimatedFilterPanel(QFrame):
         self.apply_btn.setCursor(Qt.PointingHandCursor)
         self.apply_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {COLOR_ACCENT_PRIMARY};
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4d9fff, stop:1 #a78bfa);
                 color: {COLOR_BG_PRIMARY};
                 border-radius: 8px;
                 font-size: 13px;
@@ -207,10 +207,10 @@ class AnimatedFilterPanel(QFrame):
                 border: none;
             }}
             QPushButton:hover {{
-                background-color: #33ddff;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6bb0ff, stop:1 #b9a0fc);
             }}
             QPushButton:pressed {{
-                background-color: #00a8cc;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3d8fe0, stop:1 #9070d0);
             }}
             QPushButton:disabled {{
                 background-color: {COLOR_BORDER};
@@ -779,10 +779,10 @@ class ResultsPage(QWidget):
         self.search_btn.clicked.connect(self.emit_search)
         self.search_btn.setStyleSheet(f"""
             AnimatedToolButton {{
-                background-color: {COLOR_ACCENT_PRIMARY};
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4d9fff, stop:1 #a78bfa);
                 color: {COLOR_BG_PRIMARY};
                 border-radius: 8px;
-                border: 1px solid {COLOR_ACCENT_PRIMARY};
+                border: none;
                 font-size: 13px;
                 font-weight: 600;
                 padding: 0px 16px;
@@ -852,7 +852,7 @@ class ResultsPage(QWidget):
         self.scroll_to_top_btn.setCursor(Qt.PointingHandCursor)
         self.scroll_to_top_btn.setStyleSheet(f"""
             AnimatedToolButton {{
-                background-color: {COLOR_ACCENT_PRIMARY};
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4d9fff, stop:1 #a78bfa);
                 border-radius: 20px;
                 color: {COLOR_BG_PRIMARY};
                 font-size: 20px;

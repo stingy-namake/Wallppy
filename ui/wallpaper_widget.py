@@ -1,32 +1,51 @@
 import os
 from PyQt5.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
-    QToolButton, QGraphicsEffect
+    QFrame,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QToolButton,
+    QGraphicsEffect,
 )
 from PyQt5.QtCore import (
-    Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation,
-    QEasingCurve, pyqtProperty, QPoint, QRectF
+    Qt,
+    pyqtSignal,
+    QSize,
+    QTimer,
+    QPropertyAnimation,
+    QEasingCurve,
+    pyqtProperty,
+    QPoint,
+    QRectF,
 )
 from PyQt5.QtGui import (
-    QPixmap, QPainter, QColor, QLinearGradient, QRadialGradient,
-    QBrush, QPen, QIcon
+    QPixmap,
+    QPainter,
+    QColor,
+    QLinearGradient,
+    QRadialGradient,
+    QBrush,
+    QPen,
+    QIcon,
 )
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from core.extension import WallpaperExtension
 
 THUMB_SIZE = QSize(280, 158)
 
-COLOR_BG_PRIMARY      = "#080810"
-COLOR_BG_CARD         = "#0f0f18"
-COLOR_ACCENT_BLUE     = "#4d9fff"
+COLOR_BG_PRIMARY = "#080810"
+COLOR_BG_CARD = "#0f0f18"
+COLOR_ACCENT_BLUE = "#4d9fff"
 COLOR_ACCENT_LAVENDER = "#a78bfa"
-COLOR_TEXT_PRIMARY    = "#e8e8f0"
-COLOR_TEXT_SECONDARY  = "#6b6b88"
-COLOR_TEXT_MUTED      = "#36364a"
-COLOR_BORDER          = "#18182a"
-COLOR_BORDER_HOVER    = "#252540"
-COLOR_SUCCESS         = "#34d399"
+COLOR_TEXT_PRIMARY = "#e8e8f0"
+COLOR_TEXT_SECONDARY = "#6b6b88"
+COLOR_TEXT_MUTED = "#36364a"
+COLOR_BORDER = "#18182a"
+COLOR_BORDER_HOVER = "#252540"
+COLOR_SUCCESS = "#34d399"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,16 +56,16 @@ COLOR_SUCCESS         = "#34d399"
 class HoverScaleEffect(QGraphicsEffect):
     def __init__(self, radius=14.0, no_glow=False, parent=None):
         super().__init__(parent)
-        self._scale   = 1.0
-        self._glow_t  = 0.0
-        self._radius  = radius
+        self._scale = 1.0
+        self._glow_t = 0.0
+        self._radius = radius
         self._no_glow = no_glow
 
     def getScale(self) -> float:
         return self._scale
 
     def setScale(self, v: float):
-        self._scale  = v
+        self._scale = v
         self._glow_t = max(0.0, min(1.0, (v - 1.0) / 0.025))
         self.update()
 
@@ -67,26 +86,28 @@ class HoverScaleEffect(QGraphicsEffect):
             return
 
         off = offset if isinstance(offset, QPoint) else QPoint()
-        w   = float(pixmap.width())
-        h   = float(pixmap.height())
-        ox  = float(off.x())
-        oy  = float(off.y())
-        cx  = ox + w / 2.0
-        cy  = oy + h / 2.0
-        r   = self._radius
+        w = float(pixmap.width())
+        h = float(pixmap.height())
+        ox = float(off.x())
+        oy = float(off.y())
+        cx = ox + w / 2.0
+        cy = oy + h / 2.0
+        r = self._radius
 
         painter.save()
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
 
         # ── Soft glow on the border ───────────────────────────────────────────
         if self._glow_t > 0.005 and not self._no_glow:
-            t    = self._glow_t
+            t = self._glow_t
             card = QRectF(ox, oy, w, h)
-            pw   = 1.0
+            pw = 1.0
 
             painter.setBrush(Qt.NoBrush)
             painter.setPen(QPen(QColor(77, 159, 255, int(70 * t)), pw))
-            painter.drawRoundedRect(card.adjusted(pw/2, pw/2, -pw/2, -pw/2), r, r)
+            painter.drawRoundedRect(
+                card.adjusted(pw / 2, pw / 2, -pw / 2, -pw / 2), r, r
+            )
 
             # Radial halo at the top — very soft
             hr = w * 0.48
@@ -160,11 +181,11 @@ class ShimmerLabel(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setScaledContents(True)
         self._shimmer_value = 0.0
-        self._shimmer_anim  = None
-        self._base_color    = QColor(15, 15, 24)
-        self._highlight     = QColor(26, 26, 42)
-        self._fade_effect   = None
-        self._fade_anim     = None
+        self._shimmer_anim = None
+        self._base_color = QColor(15, 15, 24)
+        self._highlight = QColor(26, 26, 42)
+        self._fade_effect = None
+        self._fade_anim = None
 
     def paintEvent(self, event):
         if self.pixmap() and not self.pixmap().isNull():
@@ -176,9 +197,9 @@ class ShimmerLabel(QLabel):
         painter.setBrush(self._base_color)
         painter.drawRoundedRect(self.rect(), 10, 10)
         pos = self._shimmer_value
-        g   = QLinearGradient(0, 0, self.width(), 0)
+        g = QLinearGradient(0, 0, self.width(), 0)
         g.setColorAt(max(0.0, pos - 0.3), self._base_color)
-        g.setColorAt(pos,                 self._highlight)
+        g.setColorAt(pos, self._highlight)
         g.setColorAt(min(1.0, pos + 0.3), self._base_color)
         painter.setBrush(QBrush(g))
         painter.drawRoundedRect(self.rect(), 10, 10)
@@ -200,14 +221,18 @@ class ShimmerLabel(QLabel):
             self._shimmer_anim = None
         self.setShimmerValue(0.0)
 
-    def getShimmerValue(self): return self._shimmer_value
+    def getShimmerValue(self):
+        return self._shimmer_value
+
     def setShimmerValue(self, v):
         self._shimmer_value = v
         self.update()
+
     shimmerValue = pyqtProperty(float, fget=getShimmerValue, fset=setShimmerValue)
 
     def fade_in_pixmap(self, pixmap: QPixmap):
         from PyQt5.QtWidgets import QGraphicsOpacityEffect
+
         if self._fade_anim and self._fade_anim.state() == QPropertyAnimation.Running:
             self._fade_anim.stop()
         self._fade_effect = QGraphicsOpacityEffect(self)
@@ -237,20 +262,29 @@ class ShimmerLabel(QLabel):
 # WallpaperWidget
 # ─────────────────────────────────────────────────────────────────────────────
 class WallpaperWidget(QFrame):
-    download_triggered      = pyqtSignal(dict)
-    expand_triggered        = pyqtSignal(dict)
+    download_triggered = pyqtSignal(dict)
+    expand_triggered = pyqtSignal(dict)
     set_wallpaper_triggered = pyqtSignal(dict)
-    delete_triggered       = pyqtSignal(dict)
+    delete_triggered = pyqtSignal(dict)
 
-    def __init__(self, extension: "WallpaperExtension", wallpaper_data: dict, download_folder: str, parent=None):
-        from core.extension import WallpaperExtension  # lazy importing to avoid circular dependency
+    def __init__(
+        self,
+        extension: "WallpaperExtension",
+        wallpaper_data: dict,
+        download_folder: str,
+        parent=None,
+    ):
+        from core.extension import (
+            WallpaperExtension,
+        )  # lazy importing to avoid circular dependency
+
         super().__init__(parent)
-        self.extension             = extension
-        self.data                  = wallpaper_data
-        self.download_folder       = download_folder
-        self.thumb_url             = extension.get_thumbnail_url(wallpaper_data)
-        self._thumb_loader         = None
-        self._loaded               = False
+        self.extension = extension
+        self.data = wallpaper_data
+        self.download_folder = download_folder
+        self.thumb_url = extension.get_thumbnail_url(wallpaper_data)
+        self._thumb_loader = None
+        self._loaded = False
         self._is_setting_wallpaper = False
 
         self.setFrameShape(QFrame.NoFrame)
@@ -311,7 +345,7 @@ class WallpaperWidget(QFrame):
 
         self.active_indicator = QToolButton()
         self.active_indicator.setText("★")
-        self.active_indicator.setToolTip("Wallpaper atual")
+        self.active_indicator.setToolTip("Active wallpaper")
         self.active_indicator.setStyleSheet(f"""
             QToolButton {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
@@ -377,7 +411,7 @@ class WallpaperWidget(QFrame):
         self.expand_btn.setToolTip("Expand preview")
         self.expand_btn.setCursor(Qt.PointingHandCursor)
         self.expand_btn.setStyleSheet(BTN_STYLE)
-        self.expand_btn.setFixedSize(30, 26)        
+        self.expand_btn.setFixedSize(30, 26)
         self.expand_btn.clicked.connect(lambda: self.expand_triggered.emit(self.data))
         bar.addWidget(self.expand_btn)
 
@@ -397,15 +431,15 @@ class WallpaperWidget(QFrame):
         self.wallpaper_btn.setToolTip("Set as wallpaper")
         self.wallpaper_btn.setCursor(Qt.PointingHandCursor)
         self.wallpaper_btn.setStyleSheet(BTN_STYLE)
-        self.wallpaper_btn.setFixedSize(30, 26)        
+        self.wallpaper_btn.setFixedSize(30, 26)
         self.wallpaper_btn.clicked.connect(self._on_set_wallpaper_clicked)
         bar.addWidget(self.wallpaper_btn)
-        
+
         _trash_svg = b'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <path d="M2 4h10M5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M4 4v9a1 1 0 001 1h4a1 1 0 001-1V4" stroke="#ff6b6b" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>\n</svg>'
         _trash_px = QPixmap()
         _trash_px.loadFromData(_trash_svg, "SVG")
         self._trash_px = _trash_px
-        
+
         self.delete_btn = AnimatedToolButton()
         self.delete_btn.setIcon(QIcon(_trash_px))
         self.delete_btn.setIconSize(QSize(14, 14))
@@ -419,7 +453,7 @@ class WallpaperWidget(QFrame):
         layout.addLayout(bar)
         self.setLayout(layout)
         self.setFixedSize(THUMB_SIZE.width() + 18, THUMB_SIZE.height() + 48)
-    
+
     def _on_delete_clicked(self):
         self.delete_triggered.emit(self.data)
 
@@ -428,7 +462,7 @@ class WallpaperWidget(QFrame):
             return
         self._is_setting_wallpaper = True
         self.wallpaper_btn.setEnabled(False)
-        self.wallpaper_btn.setIcon(QIcon(self._hourglass_px))        
+        self.wallpaper_btn.setIcon(QIcon(self._hourglass_px))
         self.wallpaper_btn.setToolTip("Setting wallpaper...")
         self.set_wallpaper_triggered.emit(self.data)
 
@@ -458,33 +492,34 @@ class WallpaperWidget(QFrame):
         self.update_active_status()
 
     def update_downloaded_status(self):
-        wall_id  = self.extension.get_wallpaper_id(self.data)
-        ext      = self.extension.get_file_extension(self.data)
-        
+        wall_id = self.extension.get_wallpaper_id(self.data)
+        ext = self.extension.get_file_extension(self.data)
+
         if self.extension.name == "Local":
             filepath = self.data.get("path", "")
             downloaded = os.path.exists(filepath) if filepath else False
         else:
             filepath = os.path.join(self.download_folder, f"wallppy-{wall_id}.{ext}")
             downloaded = os.path.exists(filepath)
-        
+
         self.checkmark_btn.setVisible(downloaded)
         self.delete_btn.setVisible(downloaded)
 
     def update_active_status(self):
         from core.wallpaper_manager import WallpaperManager
+
         current = WallpaperManager.get_current_wallpaper()
         if not current:
             self.active_indicator.hide()
             return
-        wall_id    = self.extension.get_wallpaper_id(self.data)
-        ext        = self.extension.get_file_extension(self.data)
+        wall_id = self.extension.get_wallpaper_id(self.data)
+        ext = self.extension.get_file_extension(self.data)
         downloaded = os.path.join(self.download_folder, f"wallppy-{wall_id}.{ext}")
-        direct     = self.extension.get_download_url(self.data) or ""
+        direct = self.extension.get_download_url(self.data) or ""
         current_abs = os.path.abspath(current)
         self.active_indicator.setVisible(
-            current_abs == os.path.abspath(downloaded) or
-            bool(direct and current_abs == os.path.abspath(direct))
+            current_abs == os.path.abspath(downloaded)
+            or bool(direct and current_abs == os.path.abspath(direct))
         )
 
     def load_thumbnail(self, delay_ms: int = 0):
@@ -505,12 +540,14 @@ class WallpaperWidget(QFrame):
             self._thumb_loader.wait(100)
         if os.path.exists(self.thumb_url):
             from core.workers import ThumbnailLoader
+
             self._thumb_loader = ThumbnailLoader(self.thumb_url)
             self._thumb_loader.loaded.connect(self.set_thumbnail)
             self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
             self._thumb_loader.start()
             return
         from core.workers import ThumbnailLoader
+
         self._thumb_loader = ThumbnailLoader(self.thumb_url)
         self._thumb_loader.loaded.connect(self.set_thumbnail)
         self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
@@ -518,7 +555,9 @@ class WallpaperWidget(QFrame):
 
     def set_thumbnail(self, pixmap: QPixmap):
         if not pixmap.isNull():
-            scaled = pixmap.scaled(THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = pixmap.scaled(
+                THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             self.thumb_label.stop_shimmer()
             self.thumb_label.fade_in_pixmap(scaled)
             self._loaded = True
@@ -541,11 +580,12 @@ class WallpaperWidget(QFrame):
         if self._is_loader_running():
             self._thumb_loader.quit()
             self._thumb_loader.wait(100)
-        self._thumb_loader         = None
-        self._loaded               = False
+        self._thumb_loader = None
+        self._loaded = False
         self._is_setting_wallpaper = False
         self.thumb_label.stop_shimmer()
         self.thumb_label.start_shimmer()
         self.checkmark_btn.hide()
         self.delete_btn.hide()
         self.active_indicator.hide()
+

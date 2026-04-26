@@ -325,14 +325,14 @@ class MainWindow(QMainWindow):
             }}
             
             QPushButton:default {{
-                background-color: {self.COLOR_ACCENT_PRIMARY};
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4d9fff, stop:1 #a78bfa);
                 color: {self.COLOR_BG_PRIMARY};
                 border: none;
                 font-weight: 600;
             }}
             
             QPushButton:default:hover {{
-                background-color: #33ddff;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6bb0ff, stop:1 #b9a0fc);
             }}
             
             /* Combo Boxes */

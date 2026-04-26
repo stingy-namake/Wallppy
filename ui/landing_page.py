@@ -197,13 +197,9 @@ class LandingPage(QWidget):
         logo_layout.setContentsMargins(0, 0, 0, 32)
         logo_layout.setSpacing(6)
 
-        title = QLabel("wallppy")
+        title = QLabel('<span style="color: #4d9fff;font-size:52px;font-weight:800;letter-spacing:-2px;">wallppy</span>')
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(f"""
-            font-size: 52px;
-            font-weight: 800;
-            letter-spacing: -2px;
-            color: {self.COLOR_ACCENT};
             background: transparent;
             border: none;
         """)
@@ -398,7 +394,7 @@ class LandingPage(QWidget):
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.COLOR_ACCENT};
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4d9fff, stop:1 #a78bfa);
                 color: #050508;
                 border-radius: 8px;
                 border: none;
