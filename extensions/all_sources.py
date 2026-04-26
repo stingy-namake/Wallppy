@@ -9,6 +9,8 @@ class AllExtension(WallpaperExtension):
         super().__init__()
         self.name = "All"
         self._source_cache = {}
+        self._filters_cache = None
+        self._extensions_with_filters = None
 
     def _get_source_ext(self, source: str):
         if source not in self._source_cache:
@@ -28,6 +30,8 @@ class AllExtension(WallpaperExtension):
         names = get_extension_names()
         skip = {"All", "All (Experimental)", "Local"}
 
+        ext_filters = self.get_filters()
+
         for name in names:
             if name in skip:
                 continue
@@ -37,7 +41,18 @@ class AllExtension(WallpaperExtension):
                 ext = create_extension(name)
                 if not ext:
                     continue
-                wallpapers = ext.search(query, page, **kwargs)
+
+                ext_kwargs = {}
+                for filter_id, filter_def in ext_filters.items():
+                    ext_name = filter_def.get("_extension")
+                    if ext_name == name:
+                        raw_value = kwargs.get(filter_id)
+                        if raw_value:
+                            orig_filter_id = filter_def.get("_filter_id")
+                            if orig_filter_id:
+                                ext_kwargs[orig_filter_id] = raw_value
+
+                wallpapers = ext.search(query, page, **ext_kwargs)
                 for wp in wallpapers:
                     wp = wp.copy()
                     wp["_source"] = name
@@ -84,15 +99,43 @@ class AllExtension(WallpaperExtension):
         return self._get_source_method(wallpaper_data, "get_resolution")
 
     def get_filters(self) -> Dict[str, Any]:
+        if self._filters_cache is not None:
+            return self._filters_cache
+
         names = get_extension_names()
         sources = [n for n in names if n not in ("All", "All (Experimental)", "Local")]
-        return {
+
+        filters = {
             "sources": {
                 "type": "checkboxes",
                 "label": "Sources",
                 "options": [{"id": s, "label": s, "default": True} for s in sources],
             }
         }
+
+        self._extensions_with_filters = {}
+
+        for source_name in sources:
+            try:
+                ext = create_extension(source_name)
+                if not ext:
+                    continue
+                ext_filters = ext.get_filters()
+                for filter_id, filter_def in ext_filters.items():
+                    section_key = f"{source_name}_{filter_id}"
+                    filters[section_key] = {
+                        "type": filter_def.get("type", "checkboxes"),
+                        "label": f"{source_name}: {filter_def.get('label', filter_id)}",
+                        "options": filter_def.get("options", []),
+                        "_extension": source_name,
+                        "_filter_id": filter_id,
+                    }
+                    self._extensions_with_filters[source_name] = filter_id
+            except Exception:
+                pass
+
+        self._filters_cache = filters
+        return filters
 
     def get_download_url_for_set(self, wallpaper_data: Dict[str, Any]) -> str:
         result = self._get_source_method(wallpaper_data, "get_download_url_for_set")

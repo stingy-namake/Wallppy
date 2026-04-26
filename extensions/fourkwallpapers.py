@@ -58,6 +58,10 @@ class FourKWallpapersExtension(WallpaperExtension):
         self.name = "4kwallpapers"
         self.base_url = "https://4kwallpapers.com"
         self._last_total = 0
+        self._total_pages = 0
+        self._last_query = ""
+        self._seen_ids = set()
+        self._max_page_with_results = 0
         
         self.session = requests.Session()
         retry_strategy = Retry(
@@ -95,6 +99,14 @@ class FourKWallpapersExtension(WallpaperExtension):
         category = kwargs.get('categories', '')
         if category and not query:
             query = category
+        
+        # Reset pagination tracking on new search
+        if page == 1 or query != self._last_query:
+            self._total_pages = 0
+            self._last_query = query
+            self._seen_ids = set()
+            self._max_page_with_results = 0
+        
         url = self._build_url(query, page)
         
         try:
@@ -116,10 +128,52 @@ class FourKWallpapersExtension(WallpaperExtension):
             for item in items:
                 wallpaper = self._extract_wallpaper_data(item, query)
                 if wallpaper and wallpaper.get('id') not in seen_ids:
-                    seen_ids.add(wallpaper['id'])
                     wallpapers.append(wallpaper)
             
+            if wallpapers:
+                self._max_page_with_results = page
+            
+            # Track new unique IDs in this page
+            new_ids_this_page = set()
+            for w in wallpapers:
+                wid = w.get('id')
+                if wid and wid not in self._seen_ids:
+                    new_ids_this_page.add(wid)
+            
+            # Check if we've reached the end: same results on consecutive pages
+            # indicates site has no more unique results
+            if page > 1 and len(new_ids_this_page) == 0 and len(wallpapers) > 0:
+                # No new IDs this page, all are duplicates - exhausted
+                self._total_pages = self._max_page_with_results
+                return []
+            
+            # Update seen IDs
+            for wid in new_ids_this_page:
+                self._seen_ids.add(wid)
+            
             self._last_total = len(wallpapers)
+            
+            # Detect pagination: check if pagination links exist on page
+            pagination = soup.find_all('a', class_='wallpapers__pagination')
+            if not pagination:
+                pagination = soup.find_all('div', class_='pagination')
+            if not pagination:
+                pagination = soup.find_all('nav', class_='pagination')
+            
+            # Get actual total pages from pagination if available
+            if pagination:
+                page_numbers = []
+                for p in pagination:
+                    for a in p.find_all('a'):
+                        text = a.get_text(strip=True)
+                        if text.isdigit():
+                            page_numbers.append(int(text))
+                if page_numbers:
+                    self._total_pages = max(page_numbers)
+            
+            # If no results, we've reached the end
+            if len(wallpapers) == 0:
+                return []
             
             if len(wallpapers) > 24:
                 wallpapers = wallpapers[:24]
@@ -187,6 +241,9 @@ class FourKWallpapersExtension(WallpaperExtension):
         }
     
     def get_total_pages(self, query: str, **kwargs) -> int:
+        if self._total_pages > 0:
+            return self._total_pages
+        # Fallback: use reasonable default, will stop on empty results
         return 999
     
     def get_thumbnail_url(self, wallpaper_data: Dict[str, Any]) -> str:

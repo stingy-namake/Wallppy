@@ -223,19 +223,19 @@ class AnimatedFilterPanel(QFrame):
             filter_type = filter_def.get("type")
 
             if filter_type == "checkboxes":
-                if filter_id == "categories":
+                if filter_id == "categories" or filter_id.endswith("_categories"):
                     cat = ""
                     for opt in filter_def["options"]:
                         cb = self.widgets.get(f"{filter_id}.{opt['id']}")
                         cat += "1" if (cb and cb.isChecked()) else "0"
                     values[filter_id] = cat
-                elif filter_id == "purity":
+                elif filter_id == "purity" or filter_id.endswith("_purity"):
                     pur = ""
                     for opt in filter_def["options"]:
                         cb = self.widgets.get(f"{filter_id}.{opt['id']}")
                         pur += "1" if (cb and cb.isChecked()) else "0"
                     values[filter_id] = pur
-                elif filter_id == "ratio":
+                elif filter_id == "ratio" or filter_id.endswith("_ratio"):
                     selected = []
                     for opt in filter_def["options"]:
                         cb = self.widgets.get(f"{filter_id}.{opt['id']}")
