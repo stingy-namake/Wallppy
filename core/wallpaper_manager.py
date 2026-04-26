@@ -369,7 +369,10 @@ class WallpaperSetterWorker(QThread):
             if self._is_cancelled:
                 return
 
-            image_url = self.extension.get_download_url(self.image_data)
+            if hasattr(self.extension, 'get_download_url_for_set'):
+                image_url = self.extension.get_download_url_for_set(self.image_data)
+            else:
+                image_url = self.extension.get_download_url(self.image_data)
             if not image_url:
                 self.finished.emit(False, "No download URL available", "")
                 return

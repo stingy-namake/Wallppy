@@ -202,6 +202,9 @@ class UHDWallpaperExtension(WallpaperExtension):
         elif "8K" in res:
             return "7680x4320"
         return res
+
+    def get_available_resolutions(self, wallpaper_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [{"id": r["resolution"], "label": r["label"], "width": int(r["resolution"].split("x")[0]), "height": int(r["resolution"].split("x")[1])} for r in RESOLUTIONS]
     
     def get_filters(self) -> Dict[str, Any]:
         return {

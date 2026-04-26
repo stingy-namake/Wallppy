@@ -44,8 +44,6 @@ class BackieeExtension(WallpaperExtension):
         super().__init__()
         self.name = "Backiee"
         self.base_url = "https://backiee.com"
-        self._last_total = 0
-        
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -63,6 +61,24 @@ class BackieeExtension(WallpaperExtension):
         )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
+    
+    def _get_download_url_from_page(self, page_url: str, wall_id: str) -> str:
+        from core.workers import get_session
+        session = get_session()
+        try:
+            response = session.get(page_url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            download_btn = soup.find('button', {'data-download-btn': True})
+            if download_btn:
+                file_url = download_btn.get('data-file-url', '')
+                if file_url:
+                    return file_url
+            img_id = str(int(wall_id) + 100000)
+            return f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
+        except Exception:
+            img_id = str(int(wall_id) + 100000)
+            return f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
     
     def _build_url(self, query: str, page: int) -> str:
         if query:
@@ -139,13 +155,20 @@ class BackieeExtension(WallpaperExtension):
     
     def get_download_url(self, wallpaper_data: Dict[str, Any], resolution: str = None) -> str:
         img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
-
-        url = f"{self.base_url}/static/wallpapers/1000x563/{img_id}.jpg"
-
-        if resolution:
-            url = f"{self.base_url}/static/wallpapers/{resolution}/{img_id}.jpg"
-
-        return url
+        return f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
+    
+    def get_download_url_for_set(self, wallpaper_data: Dict[str, Any]) -> str:
+        page_url = wallpaper_data.get("page_url", "")
+        wall_id = wallpaper_data.get("id", "")
+        
+        if page_url and wall_id:
+            try:
+                return self._get_download_url_from_page(page_url, wall_id)
+            except Exception:
+                pass
+        
+        img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
+        return f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
 
     def get_download_urls_by_priority(self, wallpaper_data: Dict[str, Any]) -> List[str]:
         img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
@@ -164,7 +187,7 @@ class BackieeExtension(WallpaperExtension):
         return wallpaper_data.get("resolution", "?") or "?"
 
     def get_available_resolutions(self, wallpaper_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return RESOLUTIONS
+        return []
     
     def get_filters(self) -> Dict[str, Any]:
         return {
@@ -172,10 +195,5 @@ class BackieeExtension(WallpaperExtension):
                 "type": "dropdown",
                 "label": "Category",
                 "options": [{"id": cat["id"], "label": cat["label"], "default": cat["id"] == "anime"} for cat in CATEGORIES]
-            },
-            "resolution": {
-                "type": "dropdown",
-                "label": "Resolution",
-                "options": [{"id": r["id"], "label": r["label"], "default": r["id"] == "1000x563"} for r in RESOLUTIONS]
             },
         }

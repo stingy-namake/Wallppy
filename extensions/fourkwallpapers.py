@@ -217,6 +217,9 @@ class FourKWallpapersExtension(WallpaperExtension):
     
     def get_resolution(self, wallpaper_data: Dict[str, Any]) -> str:
         return "3840x2160"
+
+    def get_available_resolutions(self, wallpaper_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return RESOLUTIONS
     
     def get_filters(self) -> Dict[str, Any]:
         return {
