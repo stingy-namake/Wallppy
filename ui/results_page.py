@@ -137,6 +137,21 @@ class AnimatedFilterPanel(QFrame):
                 cb_layout.addStretch()
                 group_layout.addWidget(cb_container)
 
+            elif filter_type == "info":
+                info_text = filter_def.get("text", "")
+                info_label = QLabel(info_text)
+                info_label.setWordWrap(True)
+                info_label.setStyleSheet(f"""
+                    color: {COLOR_TEXT_SECONDARY};
+                    font-size: 12px;
+                    background: transparent;
+                    border: none;
+                    padding: 8px;
+                    background-color: {COLOR_BG_SECONDARY};
+                    border-radius: 6px;
+                """)
+                group_layout.addWidget(info_label)
+
             elif filter_type == "dropdown":
                 combo = QComboBox()
                 combo.setStyleSheet(f"""

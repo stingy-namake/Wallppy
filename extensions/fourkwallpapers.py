@@ -278,6 +278,11 @@ class FourKWallpapersExtension(WallpaperExtension):
     
     def get_filters(self) -> Dict[str, Any]:
         return {
+            "warning": {
+                "type": "info",
+                "label": "Note",
+                "text": "4kwallpapers.com returns the same results on all pages, so only 1 page of results is possible. To browse more, use the search box (categories won't work with searches)."
+            },
             "categories": {
                 "type": "dropdown",
                 "label": "Category",
