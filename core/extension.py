@@ -35,7 +35,14 @@ class WallpaperExtension(ABC):
     @abstractmethod
     def get_resolution(self, wallpaper_data: Dict[str, Any]) -> str:
         pass
-    
+
+    def get_available_resolutions(self, wallpaper_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return []
+
+    def get_download_urls_by_priority(self, wallpaper_data: Dict[str, Any]) -> List[str]:
+        url = self.get_download_url(wallpaper_data)
+        return [url] if url else []
+
     def get_filters(self) -> Dict[str, Any]:
         """
         Return a dictionary describing available filters for this extension.

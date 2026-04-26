@@ -5,8 +5,8 @@ import threading
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import QThread, pyqtSignal, QSize, Qt
+from PyQt5.QtGui import QPixmap, QImageReader, QImage
 from typing import List, Dict, Any
 from .extension import WallpaperExtension
 
@@ -80,15 +80,10 @@ class DownloadWorker(CrashAwareThread):
         self.download_folder = download_folder
 
     def _do_run(self):
-        download_url = self.extension.get_download_url(self.data)
         wall_id = self.extension.get_wallpaper_id(self.data)
-        if not download_url:
+        download_urls = self.extension.get_download_urls_by_priority(self.data)
+        if not download_urls:
             self.finished.emit(False, "", "No image URL", wall_id)
-            return
-
-        if os.path.exists(download_url):
-            filename = os.path.basename(download_url)
-            self.finished.emit(True, download_url, filename, wall_id)
             return
 
         ext = self.extension.get_file_extension(self.data)
@@ -103,12 +98,23 @@ class DownloadWorker(CrashAwareThread):
 
         try:
             session = get_session()
-            response = session.get(download_url, stream=True, timeout=30)
-            response.raise_for_status()
+            response = None
+            for url in download_urls:
+                try:
+                    response = session.get(url, stream=True, timeout=30)
+                    if response.status_code == 200:
+                        break
+                except Exception:
+                    continue
+
+            if not response or response.status_code != 200:
+                self.finished.emit(False, "", "404", wall_id)
+                return
+
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
             last_emit = 0
-            min_interval = 0.05  # 50ms cap on progress signals
+            min_interval = 0.05
 
             with open(filepath, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -132,7 +138,7 @@ class ThumbnailLoader(CrashAwareThread):
     loaded = pyqtSignal(QPixmap)
     _cache = {}
     _lock = __import__('threading').Lock()
-    _semaphore = __import__('threading').Semaphore(3)
+    _semaphore = __import__('threading').Semaphore(8)
 
     def __init__(self, url: str):
         super().__init__()
@@ -148,7 +154,13 @@ class ThumbnailLoader(CrashAwareThread):
                         return
 
             if os.path.exists(self.url):
-                pixmap = QPixmap(self.url)
+                reader = QImageReader(self.url)
+                reader.setAutoDetectImageFormat(True)
+                if reader.supportsAnimation():
+                    reader.setScaledSize(QSize(256, 256))
+                else:
+                    reader.setScaledSize(QSize(256, 256))
+                pixmap = QPixmap.fromImage(reader.read())
                 with ThumbnailLoader._lock:
                     ThumbnailLoader._cache[self.url] = pixmap
                 self.loaded.emit(pixmap)
@@ -156,10 +168,21 @@ class ThumbnailLoader(CrashAwareThread):
 
             with ThumbnailLoader._semaphore:
                 session = get_session()
-                response = session.get(self.url, timeout=10)
+                response = session.get(self.url, timeout=10, stream=True)
                 if response.status_code == 200:
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(response.content)
+                    data = response.content
+                    if len(data) > 500_000:
+                        img = QImage()
+                        img.loadFromData(data)
+                        if not img.isNull():
+                            scaled = img.scaled(QSize(256, 256), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                            pixmap = QPixmap.fromImage(scaled)
+                        else:
+                            pixmap = QPixmap()
+                            pixmap.loadFromData(data)
+                    else:
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(data)
                     if not pixmap.isNull():
                         with ThumbnailLoader._lock:
                             ThumbnailLoader._cache[self.url] = pixmap

@@ -15,6 +15,7 @@ from PyQt5.QtGui import QColor, QFont, QPixmap, QIcon, QPainter, QBrush, QPen, Q
 
 from core.settings import Settings
 from core.extension import get_extension_names
+from core.workers import ThumbnailLoader
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -282,6 +283,30 @@ class LandingPage(QWidget):
         src_layout.addWidget(src_label, 0, Qt.AlignVCenter)
         src_layout.addWidget(self.ext_combo)
         src_layout.addStretch()
+        
+        self.clear_cache_btn = QPushButton("Clear Cache")
+        self.clear_cache_btn.setToolTip("Clear extension cache")
+        self.clear_cache_btn.setFixedHeight(34)
+        self.clear_cache_btn.setMinimumWidth(100)
+        self.clear_cache_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_cache_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.COLOR_BG_TERTIARY};
+                border: 1px solid {self.COLOR_BORDER};
+                border-radius: 7px;
+                color: {self.COLOR_TEXT_SECONDARY};
+                font-size: 12px;
+                font-weight: 500;
+                padding: 0px 16px;
+            }}
+            QPushButton:hover {{
+                border-color: {self.COLOR_BORDER_HOVER};
+                color: {self.COLOR_TEXT_PRIMARY};
+            }}
+        """)
+        self.clear_cache_btn.clicked.connect(self._clear_extension_cache)
+        src_layout.addWidget(self.clear_cache_btn)
+        
         cl.addWidget(src_wrap)
 
         # ── Search card ───────────────────────────────────────────────────
@@ -518,7 +543,8 @@ class LandingPage(QWidget):
         if name != "Local":
             self.settings.set_extension(name)
         self.extension_changed.emit(name)
-
+        self.clear_cache_btn.setToolTip(f"Clear {name} extension cache")
+        
         if name == "Local":
             self.search_edit.setEnabled(False)
             self.search_edit.setPlaceholderText("Browsing local folder...")
@@ -549,7 +575,15 @@ class LandingPage(QWidget):
             self.search_btn.setEnabled(True)
             self.on_search_text_changed(self.search_edit.text())
             self.status_message.emit("Ready")
-
+    
+    def _clear_extension_cache(self):
+        ext_name = self.ext_combo.currentText()
+        with ThumbnailLoader._lock:
+            keys_to_remove = [k for k in ThumbnailLoader._cache if ext_name.lower() in k.lower()]
+            for k in keys_to_remove:
+                del ThumbnailLoader._cache[k]
+        self.status_message.emit(f"{ext_name}: cache cleared successfully")
+    
     def emit_search(self):
         if not self.search_edit.isEnabled():
             return

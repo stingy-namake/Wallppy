@@ -249,5 +249,4 @@ Traceback:
                 else:
                     subprocess.Popen(["xdg-open", path])
         except Exception:
-            # Never let the crash handler itself crash
             pass

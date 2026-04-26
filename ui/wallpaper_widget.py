@@ -240,6 +240,7 @@ class WallpaperWidget(QFrame):
     download_triggered      = pyqtSignal(dict)
     expand_triggered        = pyqtSignal(dict)
     set_wallpaper_triggered = pyqtSignal(dict)
+    delete_triggered       = pyqtSignal(dict)
 
     def __init__(self, extension: "WallpaperExtension", wallpaper_data: dict, download_folder: str, parent=None):
         from core.extension import WallpaperExtension  # lazy importing to avoid circular dependency
@@ -399,10 +400,28 @@ class WallpaperWidget(QFrame):
         self.wallpaper_btn.setFixedSize(30, 26)        
         self.wallpaper_btn.clicked.connect(self._on_set_wallpaper_clicked)
         bar.addWidget(self.wallpaper_btn)
+        
+        _trash_svg = b'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <path d="M2 4h10M5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M4 4v9a1 1 0 001 1h4a1 1 0 001-1V4" stroke="#ff6b6b" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>\n</svg>'
+        _trash_px = QPixmap()
+        _trash_px.loadFromData(_trash_svg, "SVG")
+        self._trash_px = _trash_px
+        
+        self.delete_btn = AnimatedToolButton()
+        self.delete_btn.setIcon(QIcon(_trash_px))
+        self.delete_btn.setIconSize(QSize(14, 14))
+        self.delete_btn.setToolTip("Delete downloaded file")
+        self.delete_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_btn.setStyleSheet(BTN_STYLE)
+        self.delete_btn.setFixedSize(30, 26)
+        self.delete_btn.clicked.connect(self._on_delete_clicked)
+        bar.addWidget(self.delete_btn)
 
         layout.addLayout(bar)
         self.setLayout(layout)
         self.setFixedSize(THUMB_SIZE.width() + 18, THUMB_SIZE.height() + 48)
+    
+    def _on_delete_clicked(self):
+        self.delete_triggered.emit(self.data)
 
     def _on_set_wallpaper_clicked(self):
         if self._is_setting_wallpaper:
@@ -441,8 +460,16 @@ class WallpaperWidget(QFrame):
     def update_downloaded_status(self):
         wall_id  = self.extension.get_wallpaper_id(self.data)
         ext      = self.extension.get_file_extension(self.data)
-        filepath = os.path.join(self.download_folder, f"wallppy-{wall_id}.{ext}")
-        self.checkmark_btn.setVisible(os.path.exists(filepath))
+        
+        if self.extension.name == "Local":
+            filepath = self.data.get("path", "")
+            downloaded = os.path.exists(filepath) if filepath else False
+        else:
+            filepath = os.path.join(self.download_folder, f"wallppy-{wall_id}.{ext}")
+            downloaded = os.path.exists(filepath)
+        
+        self.checkmark_btn.setVisible(downloaded)
+        self.delete_btn.setVisible(downloaded)
 
     def update_active_status(self):
         from core.wallpaper_manager import WallpaperManager
@@ -467,26 +494,21 @@ class WallpaperWidget(QFrame):
             self._do_load_thumbnail()
 
     def _do_load_thumbnail(self):
-        if self._loaded or not self.thumb_url:
-            if not self.thumb_url:
-                self.thumb_label.stop_shimmer()
-                self.thumb_label.setText("No preview")
+        if not self.thumb_url:
+            self.thumb_label.stop_shimmer()
+            self.thumb_label.setText("No preview")
+            return
+        if self._loaded:
             return
         if self._is_loader_running():
             self._thumb_loader.quit()
             self._thumb_loader.wait(100)
         if os.path.exists(self.thumb_url):
-            px = QPixmap(self.thumb_url)
-            if not px.isNull():
-                scaled = px.scaled(THUMB_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                self.thumb_label.stop_shimmer()
-                self.thumb_label.fade_in_pixmap(scaled)
-                self._loaded = True
-            else:
-                self.thumb_label.stop_shimmer()
-                self.thumb_label.setText("Invalid preview")
-            self.update_downloaded_status()
-            self.update_active_status()
+            from core.workers import ThumbnailLoader
+            self._thumb_loader = ThumbnailLoader(self.thumb_url)
+            self._thumb_loader.loaded.connect(self.set_thumbnail)
+            self._thumb_loader.finished.connect(self._thumb_loader.deleteLater)
+            self._thumb_loader.start()
             return
         from core.workers import ThumbnailLoader
         self._thumb_loader = ThumbnailLoader(self.thumb_url)
@@ -525,4 +547,5 @@ class WallpaperWidget(QFrame):
         self.thumb_label.stop_shimmer()
         self.thumb_label.start_shimmer()
         self.checkmark_btn.hide()
+        self.delete_btn.hide()
         self.active_indicator.hide()

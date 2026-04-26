@@ -153,7 +153,9 @@ class LocalExtension(WallpaperExtension):
             self._filtered_files.sort(key=get_size, reverse=True)
         elif sort_by == "resolution":
             def get_pixels(p):
-                w, h = self._get_resolution(p)
+                cached = self._metadata.get(p, {})
+                w = cached.get("width", 0)
+                h = cached.get("height", 0)
                 return w * h
             self._filtered_files.sort(key=get_pixels, reverse=True)
         else:  # modified
@@ -172,7 +174,9 @@ class LocalExtension(WallpaperExtension):
         # Build result list with actual resolution (fast, uses cache)
         results = []
         for f in page_files:
-            w, h = self._get_resolution(f)
+            cached = self._metadata.get(f, {})
+            w = cached.get("width", 0)
+            h = cached.get("height", 0)
             resolution_str = f"{w}x{h}" if w and h else "?x?"
             results.append({
                 "path": f,

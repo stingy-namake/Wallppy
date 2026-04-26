@@ -32,6 +32,20 @@ RESOLUTIONS = [
 ]
 
 
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Referer": "https://www.uhdpaper.com/",
+}
+
+try:
+    from bs4 import BeautifulSoup
+    BeautifulSoup("", "lxml")
+    _PARSER = "lxml"
+except Exception:
+    _PARSER = "html.parser"
+
+
 class UHDWallpaperExtension(WallpaperExtension):
     """UHDPaper.com scraper implementation."""
     
@@ -43,11 +57,7 @@ class UHDWallpaperExtension(WallpaperExtension):
         self._last_total = 0
         
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Referer": "https://www.uhdpaper.com/",
-        })
+        self.session.headers.update(_HEADERS)
         retry_strategy = Retry(
             total=3,
             backoff_factor=0.5,
@@ -62,18 +72,11 @@ class UHDWallpaperExtension(WallpaperExtension):
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
     
-    def _get_headers(self) -> Dict[str, str]:
-        return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Referer": "https://www.uhdpaper.com/",
-        }
-    
     def _get_thumbnail_url_from_page(self, page_url: str) -> Optional[str]:
         try:
-            response = self.session.get(page_url, headers=self._get_headers(), timeout=15)
+            response = self.session.get(page_url, headers=_HEADERS, timeout=15)
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, _PARSER)
             
             img_tag = soup.find("img", {"class": "thumbnail"})
             if img_tag and img_tag.get("src"):
@@ -81,7 +84,7 @@ class UHDWallpaperExtension(WallpaperExtension):
             
             for img in soup.find_all("img"):
                 src = img.get("src", "")
-                if "img.uhdpaper.com/wallpaper/" in src and "@" in src:
+                if "img.uhdpaper.com/wallpaper" in src and "@" in src:
                     return src
             
             return None
@@ -106,30 +109,29 @@ class UHDWallpaperExtension(WallpaperExtension):
             response = self.session.get(
                 self.search_url,
                 params=params,
-                headers=self._get_headers(),
+                headers=_HEADERS,
                 timeout=15
             )
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-            
-            wp_boxes = soup.find_all("div", class_="wp_box")
+            soup = BeautifulSoup(response.text, _PARSER)
             
             results = []
+            wp_boxes = soup.find_all("div", class_="wp_box")
             
             for wp_box in wp_boxes:
                 anchor = wp_box.find("a", href=lambda x: x and "/20" in x)
                 if not anchor:
                     continue
                 
-                href = anchor.get("href")
+                href = anchor.get("href", "")
                 slug = href.rstrip("/").split("/")[-1]
-                wallpaper_id = slug.replace(".html", "")
+                wallpaper_id = slug.replace(".html", "", 1)
                 
-                snippet = wp_box.find("div", class_="snippet-title")
-                title = wallpaper_id
                 thumbnail = None
                 resolution = "?"
+                title = wallpaper_id
                 
+                snippet = wp_box.find("div", class_="snippet-title")
                 if snippet:
                     h2 = snippet.find("h2")
                     if h2:
@@ -168,9 +170,18 @@ class UHDWallpaperExtension(WallpaperExtension):
         return 999
     
     def get_thumbnail_url(self, wallpaper_data: Dict[str, Any]) -> str:
+        wallpaper_id = wallpaper_data.get("id", "")
+        if wallpaper_id and "@" in wallpaper_id:
+            return f"https://img.uhdpaper.com/wallpaper/{wallpaper_id}-thumb.jpg?dl"
         url = wallpaper_data.get("thumbnail_url", "")
-        if url:
-            url = url.replace("@5@n", "@5@n")
+        if not url:
+            return ""
+        if url.startswith("//"):
+            url = "https:" + url
+        if "?" not in url:
+            url = url + "?dl"
+        if "@5@" in url:
+            url = url.replace("@5@n", "@5@d").replace("@5@j", "@5@d")
         return url
     
     def get_download_url(self, wallpaper_data: Dict[str, Any], resolution: str = None) -> str:

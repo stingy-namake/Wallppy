@@ -139,13 +139,20 @@ class BackieeExtension(WallpaperExtension):
     
     def get_download_url(self, wallpaper_data: Dict[str, Any], resolution: str = None) -> str:
         img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
-        
-        url = f"{self.base_url}/static/wallpapers/3840x2160/{img_id}.jpg"
-        
+
+        url = f"{self.base_url}/static/wallpapers/1000x563/{img_id}.jpg"
+
         if resolution:
             url = f"{self.base_url}/static/wallpapers/{resolution}/{img_id}.jpg"
-        
+
         return url
+
+    def get_download_urls_by_priority(self, wallpaper_data: Dict[str, Any]) -> List[str]:
+        img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
+        return [
+            f"{self.base_url}/static/wallpapers/{r['id']}/{img_id}.jpg"
+            for r in RESOLUTIONS
+        ]
     
     def get_wallpaper_id(self, wallpaper_data: Dict[str, Any]) -> str:
         return str(wallpaper_data.get("id", ""))
@@ -154,17 +161,10 @@ class BackieeExtension(WallpaperExtension):
         return "jpg"
     
     def get_resolution(self, wallpaper_data: Dict[str, Any]) -> str:
-        res = wallpaper_data.get("resolution", "?")
-        if res != "?":
-            return res
-        img_id = wallpaper_data.get("img_id", wallpaper_data.get("id", ""))
-        if img_id:
-            for r in RESOLUTIONS:
-                url = f"{self.base_url}/static/wallpapers/{r['id']}/{img_id}.jpg"
-                resp = self.session.head(url, timeout=5)
-                if resp.status_code == 200:
-                    return f"{r['width']}x{r['height']}"
-        return "1920x1080"
+        return wallpaper_data.get("resolution", "?") or "?"
+
+    def get_available_resolutions(self, wallpaper_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return RESOLUTIONS
     
     def get_filters(self) -> Dict[str, Any]:
         return {

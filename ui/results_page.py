@@ -1187,6 +1187,7 @@ class ResultsPage(QWidget):
             widget.download_triggered.connect(self.download_wallpaper)
             widget.expand_triggered.connect(self.expand_wallpaper)
             widget.set_wallpaper_triggered.connect(self.set_as_background)
+            widget.delete_triggered.connect(self.delete_wallpaper)
 
         return widget
 
@@ -1199,6 +1200,54 @@ class ResultsPage(QWidget):
         """Queue a wallpaper for download."""
         self._download_queue.append(wallpaper_data)
         self._process_download_queue()
+    
+    def delete_wallpaper(self, wallpaper_data):
+        """Delete downloaded wallpaper file."""
+        extension_name = getattr(self.extension, 'name', '')
+        
+        if extension_name == "Local":
+            download_path = wallpaper_data.get("path", "")
+        else:
+            download_path = wallpaper_data.get("download_path", "")
+            download_folder = self.settings.download_folder
+            
+            if not download_path or not os.path.exists(download_path):
+                wall_id = self.extension.get_wallpaper_id(wallpaper_data)
+                file_ext = self.extension.get_file_extension(wallpaper_data)
+                possible_names = [
+                    f"wallppy-{wall_id}.{file_ext}",
+                    f"{wall_id}.{file_ext}",
+                    wall_id,
+                ]
+                for fname in possible_names:
+                    check_path = os.path.join(download_folder, fname)
+                    if os.path.exists(check_path):
+                        download_path = check_path
+                        break
+        
+        if not download_path or not os.path.exists(download_path):
+            main_win = self.window()
+            if hasattr(main_win, 'status_bar'):
+                main_win.status_bar.showMessage("File not found in download folder")
+            return
+        
+        try:
+            os.remove(download_path)
+            main_win = self.window()
+            if hasattr(main_win, 'status_bar'):
+                main_win.status_bar.showMessage(f"Deleted: {os.path.basename(download_path)}")
+            
+            wall_id = self.extension.get_wallpaper_id(wallpaper_data)
+            for i in range(self.grid_layout.count()):
+                widget = self.grid_layout.itemAt(i).widget()
+                if isinstance(widget, WallpaperWidget):
+                    if self.extension.get_wallpaper_id(widget.data) == wall_id:
+                        widget.update_downloaded_status()
+                        break
+        except Exception as e:
+            main_win = self.window()
+            if hasattr(main_win, 'status_bar'):
+                main_win.status_bar.showMessage(f"Delete failed: {e}")
 
     def _process_download_queue(self):
         """Process the next item in the download queue."""
@@ -1243,6 +1292,7 @@ class ResultsPage(QWidget):
                 widget = self.grid_layout.itemAt(i).widget()
                 if isinstance(widget, WallpaperWidget):
                     if self.extension.get_wallpaper_id(widget.data) == wall_id:
+                        widget.data["download_path"] = filepath
                         widget.update_downloaded_status()
                         break
             
