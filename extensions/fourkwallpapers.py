@@ -125,11 +125,9 @@ class FourKWallpapersExtension(WallpaperExtension):
                 wallpapers = wallpapers[:24]
             
             return wallpapers
-        except requests.exceptions.RequestException as e:
-            print(f"4kwallpapers error: {e}")
+        except requests.exceptions.RequestException:
             return []
-        except Exception as e:
-            print(f"4kwallpapers unexpected error: {e}")
+        except Exception:
             return []
     
     def _extract_wallpaper_data(self, item, query: str) -> Optional[Dict[str, Any]]:

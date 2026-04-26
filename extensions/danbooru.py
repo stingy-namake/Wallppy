@@ -67,8 +67,7 @@ class DanbooruExtension(WallpaperExtension):
             if isinstance(data, dict) and not data.get("success", True):
                 raise Exception(data.get("message", "Unknown API error"))
             return data if isinstance(data, list) else []
-        except Exception as e:
-            print(f"Danbooru error: {e}")
+        except Exception:
             return []
     
     def get_total_pages(self, query: str, **kwargs) -> int:

@@ -159,11 +159,9 @@ class UHDWallpaperExtension(WallpaperExtension):
             self._last_total = len(results)
             
             return results
-        except requests.exceptions.RequestException as e:
-            print(f"UHDPaper error: {e}")
+        except requests.exceptions.RequestException:
             return []
-        except Exception as e:
-            print(f"UHDPaper unexpected error: {e}")
+        except Exception:
             return []
     
     def get_total_pages(self, query: str, **kwargs) -> int:

@@ -141,8 +141,7 @@ class BackieeExtension(WallpaperExtension):
                 wallpapers = wallpapers[:24]
             
             return wallpapers
-        except Exception as e:
-            print(f"Backiee error: {e}")
+        except Exception:
             return []
     
     def get_total_pages(self, query: str, **kwargs) -> int:
