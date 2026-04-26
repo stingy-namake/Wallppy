@@ -203,6 +203,11 @@ class LandingPage(QWidget):
             background: transparent;
             border: none;
         """)
+        title_shadow = QGraphicsDropShadowEffect(title)
+        title_shadow.setBlurRadius(32)
+        title_shadow.setColor(QColor(77, 159, 255, 100))
+        title_shadow.setOffset(0, 4)
+        title.setGraphicsEffect(title_shadow)
         logo_layout.addWidget(title)
 
         # sub = QLabel("discover beautiful wallpapers")

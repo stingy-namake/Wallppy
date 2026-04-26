@@ -148,7 +148,7 @@ class AnimatedToolButton(QToolButton):
         self._anim.start()
 
     def enterEvent(self, e):
-        self._animate_to(1.06, 160)
+        self._animate_to(1.02, 160)
         super().enterEvent(e)
 
     def leaveEvent(self, e):
@@ -405,7 +405,7 @@ class WallpaperWidget(QFrame):
         _expand_px = QPixmap()
         _expand_px.loadFromData(_expand_svg, "SVG")
 
-        self.expand_btn = AnimatedToolButton()
+        self.expand_btn = AnimatedToolButton(no_glow=True)
         self.expand_btn.setIcon(QIcon(_expand_px))
         self.expand_btn.setIconSize(QSize(14, 14))
         self.expand_btn.setToolTip("Expand preview")
@@ -425,7 +425,7 @@ class WallpaperWidget(QFrame):
         _hourglass_px.loadFromData(_hourglass_svg, "SVG")
         self._hourglass_px = _hourglass_px
 
-        self.wallpaper_btn = AnimatedToolButton()
+        self.wallpaper_btn = AnimatedToolButton(no_glow=True)
         self.wallpaper_btn.setIcon(QIcon(_monitor_px))
         self.wallpaper_btn.setIconSize(QSize(14, 14))
         self.wallpaper_btn.setToolTip("Set as wallpaper")
@@ -440,7 +440,7 @@ class WallpaperWidget(QFrame):
         _trash_px.loadFromData(_trash_svg, "SVG")
         self._trash_px = _trash_px
 
-        self.delete_btn = AnimatedToolButton()
+        self.delete_btn = AnimatedToolButton(no_glow=True)
         self.delete_btn.setIcon(QIcon(_trash_px))
         self.delete_btn.setIconSize(QSize(14, 14))
         self.delete_btn.setToolTip("Delete downloaded file")
