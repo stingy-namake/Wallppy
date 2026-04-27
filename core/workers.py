@@ -206,22 +206,21 @@ class ThumbnailLoader(CrashAwareThread):
                     data = curl_fetch(self.url, timeout=10)
                 
                 if len(data) > 500_000:
-                        img = QImage()
-                        img.loadFromData(data)
-                        if not img.isNull():
-                            scaled = img.scaled(QSize(256, 256), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                            pixmap = QPixmap.fromImage(scaled)
-                        else:
-                            pixmap = QPixmap()
-                            pixmap.loadFromData(data)
+                    img = QImage()
+                    img.loadFromData(data)
+                    if not img.isNull():
+                        scaled = img.scaled(QSize(256, 256), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        pixmap = QPixmap.fromImage(scaled)
                     else:
                         pixmap = QPixmap()
                         pixmap.loadFromData(data)
-                    if not pixmap.isNull():
-                        with ThumbnailLoader._lock:
-                            ThumbnailLoader._cache[self.url] = pixmap
-                    self.loaded.emit(pixmap)
                 else:
-                    self.loaded.emit(QPixmap())
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(data)
+                
+                if not pixmap.isNull():
+                    with ThumbnailLoader._lock:
+                        ThumbnailLoader._cache[self.url] = pixmap
+                self.loaded.emit(pixmap)
         except:
             self.loaded.emit(QPixmap())
