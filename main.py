@@ -3,6 +3,7 @@
 import os
 import sys
 import subprocess
+import ssl
 
 def is_gnome_wayland():
     """Detect if running on GNOME Wayland using multiple methods"""
@@ -33,6 +34,23 @@ def is_gnome_wayland():
         return True
     
     return False
+
+def debug_ssl():
+    print(f"Python: {sys.version}")
+    print(f"OpenSSL: {ssl.OPENSSL_VERSION}")
+    try:
+        import certifi
+        print(f"Certifi: {certifi.where()}")
+    except Exception as e:
+        print(f"Certifi error: {e}")
+    import requests
+    print(f"Requests: {requests.__version__}")
+    # Check where requests gets certs
+    try:
+        import requests.utils
+        print(f"Default verify: {requests.utils.DEFAULT_CA_BUNDLE_PATH}")
+    except:
+        pass
 
 # Apply fix before Qt loads
 if sys.platform.startswith('linux'):
@@ -72,4 +90,5 @@ def main():
 
 
 if __name__ == "__main__":
+    debug_ssl()
     main()
