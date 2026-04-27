@@ -64,6 +64,9 @@ if getattr(sys, 'frozen', False):
     if os.path.exists(system_certs):
         os.environ["REQUESTS_CA_BUNDLE"] = system_certs
         os.environ["SSL_CERT_FILE"] = system_certs
+    
+    # Force use system SSL library for correct TLS fingerprint
+    os.environ["OPENSSL_FIPS"] = "1"
 
 # Apply fix before Qt loads
 if sys.platform.startswith('linux'):
