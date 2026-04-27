@@ -119,10 +119,14 @@ class BackieeExtension(WallpaperExtension):
         except Exception as e:
             logger.error(f"Backiee requests failed, trying curl: {e}")
             try:
+                curl_env = os.environ.copy()
                 result = subprocess.run(
-                    ["curl", "-sL", "--max-time", "15", url],
+                    ["curl", "-sL", "--max-time", "15", 
+                     "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                     "-H", "Referer: https://backiee.com/",
+                     url],
                     capture_output=True, text=True,
-                    env={"CURL_CA_BUNDLE": os.environ.get("SSL_CERT_FILE", "/etc/ca-certificates/extracted/tls-ca-bundle.pem")}
+                    env=curl_env
                 )
                 page_html = result.stdout
             except Exception as e2:
