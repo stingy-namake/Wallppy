@@ -58,6 +58,14 @@ Frozen: {getattr(sys, 'frozen', False)}
     with open(os.path.join(config_dir, "debug.log"), "w") as f:
         f.write(debug)
 
+# Use system certs in frozen mode to avoid stale bundled certs
+if getattr(sys, 'frozen', False):
+    import requests
+    system_certs = "/etc/ssl/certs/ca-certificates.crt"
+    if os.path.exists(system_certs):
+        os.environ["REQUESTS_CA_BUNDLE"] = system_certs
+        os.environ["SSL_CERT_FILE"] = system_certs
+
 # Apply fix before Qt loads
 if sys.platform.startswith('linux'):
     if is_gnome_wayland():
