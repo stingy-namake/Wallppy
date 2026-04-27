@@ -36,21 +36,27 @@ def is_gnome_wayland():
     return False
 
 def debug_ssl():
-    print(f"Python: {sys.version}")
-    print(f"OpenSSL: {ssl.OPENSSL_VERSION}")
+    import ssl
+    import requests
     try:
         import certifi
-        print(f"Certifi: {certifi.where()}")
-    except Exception as e:
-        print(f"Certifi error: {e}")
-    import requests
-    print(f"Requests: {requests.__version__}")
-    # Check where requests gets certs
-    try:
-        import requests.utils
-        print(f"Default verify: {requests.utils.DEFAULT_CA_BUNDLE_PATH}")
+        cert_path = certifi.where()
     except:
-        pass
+        cert_path = "not found"
+    
+    debug = f"""Wallppy Debug
+Python: {sys.version}
+OpenSSL: {ssl.OPENSSL_VERSION}
+Certifi: {cert_path}
+Requests: {requests.__version__}
+Frozen: {getattr(sys, 'frozen', False)}
+"""
+    
+    # Write to config dir
+    config_dir = os.path.expanduser("~/.config/wallppy")
+    os.makedirs(config_dir, exist_ok=True)
+    with open(os.path.join(config_dir, "debug.log"), "w") as f:
+        f.write(debug)
 
 # Apply fix before Qt loads
 if sys.platform.startswith('linux'):
