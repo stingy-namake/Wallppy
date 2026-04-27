@@ -129,6 +129,8 @@ class BackieeExtension(WallpaperExtension):
                     env=curl_env
                 )
                 page_html = result.stdout
+                stderr = result.stderr
+                logger.error(f"Curl: stdout={len(page_html)}, stderr={len(stderr)} | {stderr}")
                 logger.error(f"Curl result length: {len(page_html)}, starts: {page_html[:200] if page_html else 'empty'}")
                 if not page_html or "cloudflare" in page_html.lower():
                     logger.error(f"Curl returned cloudflare challenge: {page_html[:500] if page_html else 'empty'}")
