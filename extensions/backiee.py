@@ -44,6 +44,11 @@ class BackieeExtension(WallpaperExtension):
         super().__init__()
         self.name = "Backiee"
         self.base_url = "https://backiee.com"
+        self._last_total = 0
+        self._total_pages = 0
+        self._seen_ids = set()
+        self._max_page_with_results = 0
+        
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
