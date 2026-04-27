@@ -1,3 +1,5 @@
+import os
+import subprocess
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -111,10 +113,24 @@ class BackieeExtension(WallpaperExtension):
         url = self._build_url(query, page)
         
         try:
-            response = self.session.get(url, timeout=15, verify=False)
-            logger.error(f"Backiee request: {response.status_code} {response.headers.get('Server', 'no server header')}")
+            response = self.session.get(url, timeout=15)
             response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
+            page_html = response.text
+        except Exception as e:
+            logger.error(f"Backiee requests failed, trying curl: {e}")
+            try:
+                result = subprocess.run(
+                    ["curl", "-sL", "--max-time", "15", url],
+                    capture_output=True, text=True,
+                    env={"CURL_CA_BUNDLE": os.environ.get("SSL_CERT_FILE", "/etc/ca-certificates/extracted/tls-ca-bundle.pem")}
+                )
+                page_html = result.stdout
+            except Exception as e2:
+                logger.error(f"Backiee curl fallback also failed: {e2}")
+                return []
+        
+        try:
+            soup = BeautifulSoup(page_html, "html.parser")
             
             wallpapers = []
             seen_ids = set()
