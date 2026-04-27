@@ -434,21 +434,23 @@ class LandingPage(QWidget):
         hl.addWidget(hint)
         hl.addStretch()
 
-        self.explore_label = QLabel(f'<font color="{self.COLOR_ACCENT}">explore recent</font> →')
+        self.explore_label = QLabel(f'<font color="#4d9fff">explore content</font> →')
         self.explore_label.setTextFormat(Qt.RichText)
         self.explore_label.setStyleSheet(f"""
             QLabel {{
                 color: {self.COLOR_TEXT_SECONDARY};
-                font-size: 11px;
+                font-size: 12px;
                 background: transparent;
                 border: none;
                 padding: 3px 6px;
                 border-radius: 4px;
             }}
-            QLabel:hover {{
-                background-color: {self.COLOR_BG_TERTIARY};
-            }}
         """)
+        explore_shadow = QGraphicsDropShadowEffect(self.explore_label)
+        explore_shadow.setBlurRadius(8)
+        explore_shadow.setColor(QColor(77, 159, 255, 200))
+        explore_shadow.setOffset(0, 0)
+        self.explore_label.setGraphicsEffect(explore_shadow)
         self.explore_label.setCursor(Qt.PointingHandCursor)
         self.explore_label.mousePressEvent = lambda ev: self.emit_explore() if ev.button() == Qt.LeftButton else None
         hl.addWidget(self.explore_label)
