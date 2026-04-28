@@ -35,8 +35,8 @@ CATEGORIES = [
 ]
 
 RESOLUTIONS = [
-    {"id": "1000x563", "label": "1000x563 (HD)", "width": 1000, "height": 563},
     {"id": "3840x2160", "label": "3840x2160 (4K)", "width": 3840, "height": 2160},
+    {"id": "1000x563", "label": "1000x563 (HD)", "width": 1000, "height": 563},
 ]
 
 
