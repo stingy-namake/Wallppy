@@ -3,11 +3,12 @@
 # ============================================================
 from datetime import datetime
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QStackedWidget,
-    QProgressBar, QLabel, QApplication, QStatusBar
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
+    QProgressBar, QLabel, QApplication, QStatusBar, QShortcut, QFrame,
+    QGraphicsOpacityEffect, QScrollArea
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QSize
-from PyQt5.QtGui import QPalette, QColor, QLinearGradient, QPainter, QBrush, QFont
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QSize, QEvent
+from PyQt5.QtGui import QPalette, QColor, QLinearGradient, QPainter, QBrush, QFont, QKeySequence
 
 from core.extension import create_extension, get_extension_names
 from core.settings import Settings
@@ -49,6 +50,187 @@ class FadeStackedWidget(QStackedWidget):
         self.fade_in.setEndValue(1.0)
         self.fade_in.setEasingCurve(QEasingCurve.OutCubic)
         self.fade_in.start()
+
+
+# ============================================================
+# SECTION: Shortcuts Overlay
+# ============================================================
+class ShortcutsOverlay(QWidget):
+    """Semi-transparent overlay showing all keyboard shortcuts."""
+
+    BG = "#050508"
+    CARD_BG = "#0f0f18"
+    BORDER = "#2a2a35"
+    ACCENT = "#00d4ff"
+    TEXT = "#e8e8f0"
+    TEXT_SEC = "#a0a0b0"
+    TEXT_MUTED = "#6a6a7a"
+    BADGE_BG = "rgba(128,128,128,0.12)"
+
+    SHORTCUTS = [
+        ("Searching", [
+            ("Ctrl+K", "Focus search bar"),
+            ("Enter", "Search"),
+            ("Ctrl+N", "Go home + focus search"),
+        ]),
+        ("Navigation", [
+            ("↑ ↓ ← →", "Move between wallpapers"),
+            ("j k h l", "Vim-style navigation"),
+            ("Tab", "Next wallpaper"),
+            ("Shift+Tab", "Previous wallpaper"),
+            ("Home", "Scroll to top"),
+            ("Esc", "Back / close"),
+        ]),
+        ("Wallpaper Actions", [
+            ("Enter", "Set as wallpaper"),
+            ("Space", "Preview full image"),
+            ("Ctrl+D", "Download wallpaper"),
+            ("Ctrl+Enter", "Set as wallpaper (global)"),
+            ("Delete", "Delete downloaded file"),
+        ]),
+        ("Filters & Sources", [
+            ("Ctrl+F", "Toggle filter panel"),
+            ("Ctrl+S", "Cycle wallpaper source"),
+            ("Ctrl+L", "Jump to Local source"),
+        ]),
+        ("General", [
+            ("Ctrl+/", "Show this overlay"),
+        ]),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"background-color: rgba(5, 5, 8, 0.92);")
+        self.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignCenter)
+        outer.setContentsMargins(20, 20, 20, 20)
+
+        # Scroll area wraps the card
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{
+                background: transparent; width: 6px; border-radius: 3px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {self.BORDER}; border-radius: 3px; min-height: 30px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                border: none; background: none; height: 0px;
+            }}
+        """)
+
+        # Inner widget holds the card
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent;")
+        inner_layout = QVBoxLayout(inner)
+        inner_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        inner_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Card
+        card = QFrame()
+        card.setMaximumWidth(620)
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {self.CARD_BG};
+                border: 1px solid {self.BORDER};
+                border-radius: 16px;
+            }}
+        """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(32, 28, 32, 24)
+        card_layout.setSpacing(20)
+
+        # Shortcut categories
+        for category, shortcuts in self.SHORTCUTS:
+            cat_widget = QWidget()
+            cat_layout = QVBoxLayout(cat_widget)
+            cat_layout.setContentsMargins(0, 0, 0, 0)
+            cat_layout.setSpacing(6)
+
+            cat_label = QLabel(category)
+            cat_label.setStyleSheet(f"""
+                color: {self.ACCENT};
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                background: transparent;
+                border: none;
+            """)
+            cat_layout.addWidget(cat_label)
+
+            for key, desc in shortcuts:
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(12)
+
+                key_label = QLabel(key)
+                key_label.setMinimumWidth(90)
+                key_label.setMaximumWidth(130)
+                key_label.setStyleSheet(f"""
+                    color: {self.TEXT};
+                    font-size: 12px;
+                    font-weight: 600;
+                    font-family: 'SF Mono', 'Consolas', monospace;
+                    background: {self.BADGE_BG};
+                    border-radius: 4px;
+                    padding: 3px 8px;
+                    border: none;
+                """)
+                row.addWidget(key_label, 0)
+
+                desc_label = QLabel(desc)
+                desc_label.setStyleSheet(f"""
+                    color: {self.TEXT_SEC};
+                    font-size: 12px;
+                    background: transparent;
+                    border: none;
+                """)
+                row.addWidget(desc_label, 1)
+
+                cat_layout.addLayout(row)
+
+            card_layout.addWidget(cat_widget)
+
+        # Footer hint
+        footer = QLabel("Press Esc or Ctrl+/ to close")
+        footer.setAlignment(Qt.AlignCenter)
+        footer.setStyleSheet(f"""
+            color: {self.TEXT_MUTED};
+            font-size: 11px;
+            background: transparent;
+            border: none;
+            padding-top: 8px;
+        """)
+        card_layout.addWidget(footer)
+
+        inner_layout.addWidget(card, 0, Qt.AlignHCenter)
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+
+        # Escape to close
+        QShortcut(QKeySequence("Escape"), self, self.hide)
+        QShortcut(QKeySequence("Ctrl+/"), self, self.hide)
+
+    def toggle(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+
+    def showEvent(self, event):
+        self.resize(self.parent().size())
+        super().showEvent(event)
+
+    def mousePressEvent(self, event):
+        self.hide()
 
 
 # ============================================================
@@ -99,6 +281,8 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.apply_modern_dark_theme()
         self.setup_status_bar()
+        self._setup_global_shortcuts()
+        QApplication.instance().installEventFilter(self)
 
     # ============================================================
     # SECTION: UI Initialization
@@ -134,17 +318,130 @@ class MainWindow(QMainWindow):
 
         self.stacked.setCurrentIndex(0)
 
+        # Shortcuts overlay (on top of everything)
+        self.shortcuts_overlay = ShortcutsOverlay(central)
+
     # ============================================================
     # SECTION: Event Handlers
     # ============================================================
+    def eventFilter(self, obj, event):
+        """Application-level event filter for grid navigation fallback."""
+        if event.type() == QEvent.KeyPress and self.stacked.currentIndex() == 1:
+            key = event.key()
+            nav_keys = {
+                Qt.Key_Up: (-1, 0), Qt.Key_K: (-1, 0),
+                Qt.Key_Down: (1, 0), Qt.Key_J: (1, 0),
+                Qt.Key_Left: (0, -1), Qt.Key_H: (0, -1),
+                Qt.Key_Right: (0, 1), Qt.Key_L: (0, 1),
+            }
+            if key in nav_keys and event.modifiers() == Qt.NoModifier:
+                focused = QApplication.focusWidget()
+                from .wallpaper_widget import WallpaperWidget
+                if isinstance(focused, WallpaperWidget) and self.results_page._focused_wallpaper:
+                    row_d, col_d = nav_keys[key]
+                    self.results_page._navigate_grid(row_d, col_d)
+                    return True
+        return super().eventFilter(obj, event)
+
     def keyPressEvent(self, event):
-        """Global keyboard shortcuts."""
-        if (self.stacked.currentIndex() == 0 and
-            event.key() == Qt.Key_Return and
-            event.modifiers() == Qt.NoModifier):
-            self.landing_page.emit_search()
+        """Only handle Escape here. Global shortcuts use QShortcut."""
+        if event.key() == Qt.Key_Escape and event.modifiers() == Qt.NoModifier:
+            if self.stacked.currentIndex() == 1:
+                if self.results_page.overlay.isVisible():
+                    return  # overlay handles its own Escape
+                else:
+                    self.go_home()
+                    return
+        super().keyPressEvent(event)
+
+    def _setup_global_shortcuts(self):
+        """Global shortcuts that work regardless of focused widget."""
+        # Ctrl+K — focus search bar
+        sc = QShortcut(QKeySequence("Ctrl+K"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._focus_search)
+
+        # Ctrl+N — go home + focus search
+        sc = QShortcut(QKeySequence("Ctrl+N"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._go_home_focus_search)
+
+        # Ctrl+D — download focused wallpaper
+        sc = QShortcut(QKeySequence("Ctrl+D"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._download_focused)
+
+        # Ctrl+Enter — set focused wallpaper
+        sc = QShortcut(QKeySequence("Ctrl+Return"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._set_focused_wallpaper)
+
+        # Ctrl+F — toggle filters
+        sc = QShortcut(QKeySequence("Ctrl+F"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._toggle_filters)
+
+        # Ctrl+/ — show shortcuts
+        sc = QShortcut(QKeySequence("Ctrl+/"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._show_shortcuts_overlay)
+
+        # Ctrl+S — cycle source
+        sc = QShortcut(QKeySequence("Ctrl+S"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._cycle_source)
+
+        # Ctrl+L — jump to Local source
+        sc = QShortcut(QKeySequence("Ctrl+L"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._select_local_source)
+
+        # Home — scroll to top on results page
+        sc = QShortcut(QKeySequence("Home"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._scroll_to_top)
+
+    def _focus_search(self):
+        if self.stacked.currentIndex() == 0:
+            self.landing_page.search_edit.setFocus()
         else:
-            super().keyPressEvent(event)
+            self.results_page.search_edit.setFocus()
+
+    def _go_home_focus_search(self):
+        self.go_home()
+        QTimer.singleShot(50, lambda: self.landing_page.search_edit.setFocus())
+
+    def _download_focused(self):
+        if self.stacked.currentIndex() == 1 and self.results_page._focused_wallpaper:
+            self.results_page._focused_wallpaper.emit_download()
+
+    def _set_focused_wallpaper(self):
+        if self.stacked.currentIndex() == 1 and self.results_page._focused_wallpaper:
+            self.results_page._focused_wallpaper._on_set_wallpaper_clicked()
+
+    def _toggle_filters(self):
+        if self.stacked.currentIndex() == 1:
+            self.results_page.toggle_filter_panel()
+
+    def _cycle_source(self):
+        combo = self.landing_page.ext_combo
+        idx = (combo.currentIndex() + 1) % combo.count()
+        combo.setCurrentIndex(idx)
+
+    def _select_local_source(self):
+        combo = self.landing_page.ext_combo
+        for i in range(combo.count()):
+            if combo.itemText(i) == "Local":
+                combo.setCurrentIndex(i)
+                break
+
+    def _scroll_to_top(self):
+        if self.stacked.currentIndex() == 1:
+            self.results_page.scroll_to_top()
+
+    def _show_shortcuts_overlay(self):
+        """Toggle keyboard shortcuts overlay."""
+        self.shortcuts_overlay.toggle()
 
     def on_extension_changed(self, name: str):
         """Handle extension source changes."""
@@ -565,6 +862,11 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(msg)
         else:
             self.status_bar.showMessage(f"X Download failed: {filename}")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.shortcuts_overlay.isVisible():
+            self.shortcuts_overlay.resize(self.centralWidget().size())
 
     def closeEvent(self, event):
         """Cleanup on application close."""

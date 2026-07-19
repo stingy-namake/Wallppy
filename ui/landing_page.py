@@ -526,6 +526,20 @@ class LandingPage(QWidget):
         dir_row.addWidget(self.browse_btn)
 
         cl.addLayout(dir_row)
+
+        # ── Shortcuts hint ──────────────────────────────────────────────
+        shortcuts_hint = QLabel("<span style='color:#36364a;font-size:11px;'>Press <span style='background:rgba(128,128,128,0.1);padding:2px 6px;border-radius:4px;'>Ctrl+/</span> for all shortcuts</span>")
+        shortcuts_hint.setTextFormat(Qt.RichText)
+        shortcuts_hint.setAlignment(Qt.AlignCenter)
+        shortcuts_hint.setStyleSheet(f"""
+            color: {self.COLOR_TEXT_MUTED};
+            font-size: 11px;
+            background: transparent;
+            border: none;
+            padding-top: 16px;
+        """)
+        cl.addWidget(shortcuts_hint)
+
         layout.addStretch(1)
         layout.addWidget(container)
         layout.addStretch(1)

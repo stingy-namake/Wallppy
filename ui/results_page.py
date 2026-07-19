@@ -530,6 +530,11 @@ class ResultsPage(QWidget):
         self._current_download_worker = None
         self._is_downloading = False
 
+        # Grid keyboard navigation
+        self._focused_wallpaper = None
+        self._focused_row = 0
+        self._focused_col = 0
+
         self.init_ui()
         self.init_overlay()
         self._setup_loading_bar_animation()
@@ -950,6 +955,60 @@ class ResultsPage(QWidget):
 
     def on_overlay_closed(self):
         self.activateWindow()
+        if self._focused_wallpaper:
+            self._focused_wallpaper.setFocus()
+        elif self.wallpapers:
+            self._focus_first_wallpaper()
+
+    def keyPressEvent(self, event):
+        """Grid keyboard navigation: arrows + vim (jkhl)."""
+        key = event.key()
+        modifiers = event.modifiers()
+
+        # Don't handle if search bar is focused
+        if self.search_edit.hasFocus():
+            if key in (Qt.Key_Escape,):
+                self.search_edit.clearFocus()
+                if self._focused_wallpaper:
+                    self._focused_wallpaper.setFocus()
+                elif self.wallpapers:
+                    self._focus_first_wallpaper()
+                return
+            super().keyPressEvent(event)
+            return
+
+        # Don't handle if overlay is open
+        if self.overlay.isVisible():
+            return
+
+        # Don't handle if filter panel is focused
+        if self.filter_panel.isVisible() and self.filter_panel.hasFocus():
+            super().keyPressEvent(event)
+            return
+
+        # Navigation keys
+        nav_map = {
+            Qt.Key_Up: (0, -1), Qt.Key_K: (0, -1),
+            Qt.Key_Down: (0, 1), Qt.Key_J: (0, 1),
+            Qt.Key_Left: (0, -1), Qt.Key_H: (0, -1),
+            Qt.Key_Right: (0, 1), Qt.Key_L: (0, 1),
+        }
+
+        if key in nav_map and modifiers == Qt.NoModifier:
+            row_d, col_d = nav_map[key]
+            # Up/Down = row, Left/Right = col
+            if key in (Qt.Key_Up, Qt.Key_K, Qt.Key_Down, Qt.Key_J):
+                self._navigate_grid(row_d, 0)
+            else:
+                self._navigate_grid(0, col_d)
+            return
+
+        # Home = scroll to top
+        if key == Qt.Key_Home and modifiers == Qt.NoModifier:
+            self.scroll_to_top()
+            return
+
+        super().keyPressEvent(event)
 
     def toggle_filter_panel(self):
         is_visible = self.filter_panel.isVisible()
@@ -1000,6 +1059,92 @@ class ResultsPage(QWidget):
         self._scroll_animation.setEndValue(0)
         self._scroll_animation.setEasingCurve(QEasingCurve.OutCubic)
         self._scroll_animation.start()
+
+    # ============================================================
+    # SECTION: Grid Keyboard Navigation
+    # ============================================================
+    def _focus_first_wallpaper(self):
+        """Set keyboard focus to first wallpaper in grid after search."""
+        if not self.wallpapers:
+            return
+        widget = self.grid_layout.itemAt(0)
+        if widget and widget.widget():
+            self._focused_row = 0
+            self._focused_col = 0
+            self._focused_wallpaper = widget.widget()
+            self._focused_wallpaper.setFocus()
+
+    def _navigate_grid(self, row_delta, col_delta):
+        """Move focus in grid direction. Wraps around rows."""
+        if not self.wallpapers:
+            return
+
+        total = len(self.wallpapers)
+        cols = self.columns
+        if cols <= 0:
+            return
+
+        # Calculate new flat index
+        current_flat = self._focused_row * cols + self._focused_col
+        new_flat = current_flat + row_delta * cols + col_delta
+
+        # Clamp to valid range
+        new_flat = max(0, min(new_flat, total - 1))
+
+        new_row = new_flat // cols
+        new_col = new_flat % cols
+
+        # If moving right at end of row, wrap to next row start
+        if col_delta > 0 and self._focused_col == cols - 1:
+            next_row_start = (self._focused_row + 1) * cols
+            if next_row_start < total:
+                new_flat = next_row_start
+                new_row = new_flat // cols
+                new_col = new_flat % cols
+            else:
+                return  # at last row, stop
+
+        # If moving left at start of row, wrap to prev row end
+        if col_delta < 0 and self._focused_col == 0 and self._focused_row > 0:
+            prev_row_end = self._focused_row * cols - 1
+            new_flat = max(0, prev_row_end)
+            new_row = new_flat // cols
+            new_col = new_flat % cols
+
+        self._set_grid_focus(new_row, new_col)
+
+    def _set_grid_focus(self, row, col):
+        """Focus widget at grid position."""
+        idx = row * self.columns + col
+        item = self.grid_layout.itemAt(idx)
+        if item and item.widget():
+            self._focused_row = row
+            self._focused_col = col
+            self._focused_wallpaper = item.widget()
+            self._focused_wallpaper.setFocus()
+            self._ensure_visible(self._focused_wallpaper)
+
+    def _ensure_visible(self, widget):
+        """Scroll to ensure widget is visible in viewport."""
+        viewport = self.scroll_area.viewport()
+        widget_rect = widget.geometry()
+        viewport_rect = viewport.rect()
+
+        # Map widget rect to viewport coordinates
+        widget_pos = widget.mapTo(viewport, widget.rect().topLeft())
+        widget_rect_view = widget.rect()
+        widget_rect_view.moveTopLeft(widget_pos)
+
+        scrollbar = self.scroll_area.verticalScrollBar()
+
+        if widget_rect_view.top() < 0:
+            scrollbar.setValue(scrollbar.value() + widget_rect_view.top() - 10)
+        elif widget_rect_view.bottom() > viewport_rect.height():
+            scrollbar.setValue(scrollbar.value() + widget_rect_view.bottom() - viewport_rect.height() + 10)
+
+    def _on_wallpaper_navigate(self, row_delta, col_delta):
+        """Handle navigation signal from WallpaperWidget keyPressEvent."""
+        self._navigate_grid(row_delta, col_delta)
 
     def emit_search(self):
         query = self.search_edit.text().strip()
@@ -1096,6 +1241,7 @@ class ResultsPage(QWidget):
             else:
                 self.results_container.setCurrentIndex(0)
                 self.rebuild_grid()
+                QTimer.singleShot(50, self._focus_first_wallpaper)
                 main_win = self.window()
                 if hasattr(main_win, 'status_bar'):
                     if self.current_query == "":
@@ -1164,7 +1310,7 @@ class ResultsPage(QWidget):
             wall_id = self.extension.get_wallpaper_id(wp)
             widget = self._widget_by_id.get(wall_id)
             if widget is None:
-                widget = self._get_or_create_widget(wp, global_index)
+                widget = self._get_or_create_widget(wp)
                 self._widget_by_id[wall_id] = widget
             self.grid_layout.addWidget(widget, row, col)
 
@@ -1203,6 +1349,7 @@ class ResultsPage(QWidget):
             widget.expand_triggered.connect(self.expand_wallpaper)
             widget.set_wallpaper_triggered.connect(self.set_as_background)
             widget.delete_triggered.connect(self.delete_wallpaper)
+            widget.navigate.connect(self._on_wallpaper_navigate)
 
         return widget
 

@@ -266,6 +266,7 @@ class WallpaperWidget(QFrame):
     expand_triggered = pyqtSignal(dict)
     set_wallpaper_triggered = pyqtSignal(dict)
     delete_triggered = pyqtSignal(dict)
+    navigate = pyqtSignal(int, int)  # (row_delta, col_delta)
 
     def __init__(
         self,
@@ -287,39 +288,27 @@ class WallpaperWidget(QFrame):
         self._loaded = False
         self._is_setting_wallpaper = False
 
+        self.setFocusPolicy(Qt.StrongFocus)
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(f"""
             WallpaperWidget {{
                 background-color: {COLOR_BG_CARD};
                 border-radius: 14px;
-                border: 1px solid {COLOR_BORDER};
+                border: 2px solid transparent;
+            }}
+            WallpaperWidget:hover {{
+                border: 2px solid {COLOR_BORDER_HOVER};
+            }}
+            WallpaperWidget:focus {{
+                border: 2px solid {COLOR_ACCENT_BLUE};
             }}
         """)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self._hover_effect = HoverScaleEffect(radius=14.0, parent=self)
-        self.setGraphicsEffect(self._hover_effect)
-
-        self._hover_anim = QPropertyAnimation(self._hover_effect, b"scale", self)
-        self._hover_anim.setDuration(250)
-        self._hover_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._hover_anim = None
 
         self.init_ui()
         QTimer.singleShot(0, self.load_thumbnail)
-
-    def enterEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setStartValue(self._hover_effect.getScale())
-        self._hover_anim.setEndValue(1.025)
-        self._hover_anim.start()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setStartValue(self._hover_effect.getScale())
-        self._hover_anim.setEndValue(1.0)
-        self._hover_anim.start()
-        super().leaveEvent(event)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -328,6 +317,7 @@ class WallpaperWidget(QFrame):
 
         self.thumb_label = ShimmerLabel()
         self.thumb_label.setAlignment(Qt.AlignCenter)
+        self.thumb_label.setFocusPolicy(Qt.NoFocus)
         self.thumb_label.setStyleSheet(f"""
             QLabel {{
                 background-color: {COLOR_BG_PRIMARY};
@@ -346,6 +336,7 @@ class WallpaperWidget(QFrame):
         self.active_indicator = QToolButton()
         self.active_indicator.setText("★")
         self.active_indicator.setToolTip("Active wallpaper")
+        self.active_indicator.setFocusPolicy(Qt.NoFocus)
         self.active_indicator.setStyleSheet(f"""
             QToolButton {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
@@ -361,6 +352,7 @@ class WallpaperWidget(QFrame):
         self.checkmark_btn = QToolButton()
         self.checkmark_btn.setText("✓")
         self.checkmark_btn.setToolTip("Downloaded")
+        self.checkmark_btn.setFocusPolicy(Qt.NoFocus)
         self.checkmark_btn.setStyleSheet(f"""
             QToolButton {{
                 background-color: transparent;
@@ -376,6 +368,7 @@ class WallpaperWidget(QFrame):
 
         res = self.extension.get_resolution(self.data)
         self.res_label = QLabel(res)
+        self.res_label.setFocusPolicy(Qt.NoFocus)
         self.res_label.setStyleSheet(
             f"color: {COLOR_TEXT_MUTED}; font-size: 10px; letter-spacing: 0.3px;"
             " background: transparent; border: none;"
@@ -409,6 +402,7 @@ class WallpaperWidget(QFrame):
         self.expand_btn.setIcon(QIcon(_expand_px))
         self.expand_btn.setIconSize(QSize(14, 14))
         self.expand_btn.setToolTip("Expand preview")
+        self.expand_btn.setFocusPolicy(Qt.NoFocus)
         self.expand_btn.setCursor(Qt.PointingHandCursor)
         self.expand_btn.setStyleSheet(BTN_STYLE)
         self.expand_btn.setFixedSize(30, 26)
@@ -429,6 +423,7 @@ class WallpaperWidget(QFrame):
         self.wallpaper_btn.setIcon(QIcon(_monitor_px))
         self.wallpaper_btn.setIconSize(QSize(14, 14))
         self.wallpaper_btn.setToolTip("Set as wallpaper")
+        self.wallpaper_btn.setFocusPolicy(Qt.NoFocus)
         self.wallpaper_btn.setCursor(Qt.PointingHandCursor)
         self.wallpaper_btn.setStyleSheet(BTN_STYLE)
         self.wallpaper_btn.setFixedSize(30, 26)
@@ -444,6 +439,7 @@ class WallpaperWidget(QFrame):
         self.delete_btn.setIcon(QIcon(_trash_px))
         self.delete_btn.setIconSize(QSize(14, 14))
         self.delete_btn.setToolTip("Delete downloaded file")
+        self.delete_btn.setFocusPolicy(Qt.NoFocus)
         self.delete_btn.setCursor(Qt.PointingHandCursor)
         self.delete_btn.setStyleSheet(BTN_STYLE)
         self.delete_btn.setFixedSize(30, 26)
@@ -485,6 +481,26 @@ class WallpaperWidget(QFrame):
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.emit_download()
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            self._on_set_wallpaper_clicked()
+        elif key == Qt.Key_Space:
+            self.expand_triggered.emit(self.data)
+        elif key == Qt.Key_Delete:
+            if self.checkmark_btn.isVisible():
+                self.delete_triggered.emit(self.data)
+        elif key in (Qt.Key_Up, Qt.Key_K):
+            self.navigate.emit(-1, 0)
+        elif key in (Qt.Key_Down, Qt.Key_J):
+            self.navigate.emit(1, 0)
+        elif key in (Qt.Key_Left, Qt.Key_H):
+            self.navigate.emit(0, -1)
+        elif key in (Qt.Key_Right, Qt.Key_L):
+            self.navigate.emit(0, 1)
+        else:
+            super().keyPressEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -571,9 +587,6 @@ class WallpaperWidget(QFrame):
         self.download_triggered.emit(self.data)
 
     def cleanup(self):
-        if self._hover_anim.state() == QPropertyAnimation.Running:
-            self._hover_anim.stop()
-        self._hover_effect.setScale(1.0)
         self.expand_btn.cleanup()
         self.wallpaper_btn.cleanup()
         self.thumb_label.cleanup_fade()
