@@ -14,12 +14,10 @@ class WallpaperManager:
 
     @classmethod
     def set_current_wallpaper(cls, path: str):
-        """Store the path of the currently active wallpaper."""
         cls._current_wallpaper_path = os.path.abspath(path) if path else None
 
     @classmethod
     def get_current_wallpaper(cls):
-        """Return the path of the currently active wallpaper, or None."""
         return cls._current_wallpaper_path
 
     @staticmethod
@@ -32,6 +30,19 @@ class WallpaperManager:
         env = os.environ.copy()
         env.pop('LD_LIBRARY_PATH', None)
         return env
+
+    @staticmethod
+    def _run_cmd(cmd, env=None, timeout=5):
+        """Run a command silently, return True on success."""
+        try:
+            result = subprocess.run(
+                cmd, env=env or WallpaperManager._clean_env(),
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=timeout
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -73,59 +84,34 @@ class WallpaperManager:
 
     @staticmethod
     def _detect_desktop():
-        """Detect the current Linux desktop environment or compositor.
-
-        Returns a string identifier: 'cosmic', 'niri+noctalia', 'niri',
-        'gnome', 'kde', 'sway', 'hyprland', or 'unknown'.
-        """
+        """Detect the current Linux desktop environment or compositor."""
         xdg = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
 
-        # COSMIC
         if "cosmic" in xdg:
             return "cosmic"
 
-        # Niri compositor
         if os.environ.get("NIRI_SOCKET") or "niri" in xdg:
-            # Check for Noctalia Shell
-            try:
-                result = subprocess.run(
-                    ["qs", "-c", "noctalia-shell", "--version"],
-                    env=WallpaperManager._clean_env(),
-                    capture_output=True, timeout=5
-                )
-                if result.returncode == 0:
-                    return "niri+noctalia"
-            except Exception:
-                pass
+            if WallpaperManager._run_cmd(
+                ["qs", "-c", "noctalia-shell", "--version"]
+            ):
+                return "niri+noctalia"
             return "niri"
 
-        # GNOME / Mutter-based
         if "gnome" in xdg or "unity" in xdg or "cinnamon" in xdg or "mate" in xdg or "budgie" in xdg:
             return "gnome"
 
-        # KDE Plasma
         if "kde" in xdg:
             return "kde"
 
-        # Sway
         if os.environ.get("SWAYSOCK") or "sway" in xdg:
             return "sway"
 
-        # Hyprland
         if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") or "hyprland" in xdg:
             return "hyprland"
 
-        # Fallback: try to infer from running processes
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", "gnome-shell"],
-                env=WallpaperManager._clean_env(),
-                capture_output=True, timeout=3
-            )
-            if result.returncode == 0:
-                return "gnome"
-        except Exception:
-            pass
+        # Fallback: infer from running processes
+        if WallpaperManager._run_cmd(["pgrep", "-x", "gnome-shell"], timeout=3):
+            return "gnome"
 
         return "unknown"
 
@@ -166,47 +152,21 @@ class WallpaperManager:
     @staticmethod
     def _set_niri_wallpaper(image_path, noctalia=False):
         """Set wallpaper on Niri compositor."""
-        env = WallpaperManager._clean_env()
-
-        # Noctalia Shell IPC via qs
         if noctalia:
-            try:
-                result = subprocess.run(
-                    ["qs", "-c", "noctalia-shell", "ipc", "call",
-                     "wallpaper", "set", image_path, "all"],
-                    env=env, check=False,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
-                )
-                if result.returncode == 0:
-                    return True
-            except Exception:
-                pass
+            if WallpaperManager._run_cmd(
+                ["qs", "-c", "noctalia-shell", "ipc", "call",
+                 "wallpaper", "set", image_path, "all"],
+                timeout=10
+            ):
+                return True
 
-        # swww fallback
         if shutil.which("swww"):
-            try:
-                result = subprocess.run(
-                    ["swww", "img", image_path],
-                    env=env, check=False,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
-                )
-                if result.returncode == 0:
-                    return True
-            except Exception:
-                pass
+            if WallpaperManager._run_cmd(["swww", "img", image_path], timeout=10):
+                return True
 
-        # swaybg fallback
         if shutil.which("swaybg"):
-            try:
-                result = subprocess.run(
-                    ["swaybg", "-i", image_path, "-m", "fill"],
-                    env=env, check=False,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
-                )
-                if result.returncode == 0:
-                    return True
-            except Exception:
-                pass
+            if WallpaperManager._run_cmd(["swaybg", "-i", image_path, "-m", "fill"], timeout=10):
+                return True
 
         return False
 
@@ -218,6 +178,7 @@ class WallpaperManager:
     def _set_gnome_wallpaper(image_path):
         """Set GNOME wallpaper via dconf/gsettings."""
         file_uri = f"file://{image_path}"
+        keys = ["picture-uri", "picture-uri-dark"]
         env = WallpaperManager._clean_env()
 
         # dconf
@@ -229,11 +190,10 @@ class WallpaperManager:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
-                subprocess.run(
+                WallpaperManager._run_cmd(
                     ["dconf", "write", "/org/gnome/desktop/background/picture-uri-dark",
                      f"'{file_uri}'"],
-                    env=env, check=False,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+                    env=env, timeout=5
                 )
                 return True
         except Exception:
@@ -253,11 +213,10 @@ class WallpaperManager:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
                 )
                 if result.returncode == 0:
-                    subprocess.run(
+                    WallpaperManager._run_cmd(
                         ["gsettings", "set", "org.gnome.desktop.background",
                          "picture-uri-dark", file_uri],
-                        env=env_kf, check=False,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+                        env=env_kf, timeout=5
                     )
                     return True
             except Exception:
@@ -273,118 +232,26 @@ class WallpaperManager:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
             )
             if result.returncode == 0:
-                subprocess.run(
+                WallpaperManager._run_cmd(
                     ["bash", "-c",
                      f"dbus-launch --exit-with-session gsettings set "
                      f"org.gnome.desktop.background picture-uri-dark '{file_uri}'"],
-                    env=env, check=False,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
+                    env=env, timeout=5
                 )
                 return True
         except Exception:
             pass
 
         # gconftool-2 (older GNOME)
-        try:
-            result = subprocess.run(
-                ["gconftool-2", "--set",
-                 "/desktop/gnome/background/picture_filename",
-                 "--type", "string", image_path],
-                env=env, check=False,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            if result.returncode == 0:
-                return True
-        except Exception:
-            pass
+        if WallpaperManager._run_cmd(
+            ["gconftool-2", "--set",
+             "/desktop/gnome/background/picture_filename",
+             "--type", "string", image_path],
+            env=env, timeout=5
+        ):
+            return True
 
         return False
-
-    # ------------------------------------------------------------------
-    # Linux — KDE Plasma
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _set_kde_wallpaper(image_path):
-        """Set KDE Plasma wallpaper."""
-        try:
-            result = subprocess.run(
-                ["plasma-apply-wallpaperimage", image_path],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    # ------------------------------------------------------------------
-    # Linux — Sway
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _set_sway_wallpaper(image_path):
-        """Set Sway wallpaper."""
-        try:
-            result = subprocess.run(
-                ["swaymsg", f"output * bg {image_path} fill"],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    # ------------------------------------------------------------------
-    # Linux — Hyprland
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _set_hyprland_wallpaper(image_path):
-        """Set Hyprland wallpaper."""
-        try:
-            subprocess.run(
-                ["hyprctl", "hyprpaper", "preload", image_path],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3
-            )
-            result = subprocess.run(
-                ["hyprctl", "hyprpaper", "wallpaper", f",{image_path}"],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    # ------------------------------------------------------------------
-    # Linux — Fallbacks (X11)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _set_feh_wallpaper(image_path):
-        """Set wallpaper via feh."""
-        try:
-            result = subprocess.run(
-                ["feh", "--bg-scale", image_path],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    @staticmethod
-    def _set_nitrogen_wallpaper(image_path):
-        """Set wallpaper via nitrogen."""
-        try:
-            result = subprocess.run(
-                ["nitrogen", "--set-zoom-fill", image_path],
-                env=WallpaperManager._clean_env(),
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
 
     # ------------------------------------------------------------------
     # Linux — Dispatcher
@@ -395,38 +262,27 @@ class WallpaperManager:
         """Set wallpaper on Linux by detecting the desktop environment."""
         desktop = WallpaperManager._detect_desktop()
 
-        if desktop == "cosmic":
-            if WallpaperManager._set_cosmic_wallpaper(image_path):
-                return
+        dispatch = {
+            "cosmic":       lambda: WallpaperManager._set_cosmic_wallpaper(image_path),
+            "niri+noctalia": lambda: WallpaperManager._set_niri_wallpaper(image_path, noctalia=True),
+            "niri":         lambda: WallpaperManager._set_niri_wallpaper(image_path, noctalia=False),
+            "gnome":        lambda: WallpaperManager._set_gnome_wallpaper(image_path),
+            "kde":          lambda: WallpaperManager._run_cmd(["plasma-apply-wallpaperimage", image_path]),
+            "sway":         lambda: WallpaperManager._run_cmd(["swaymsg", f"output * bg {image_path} fill"]),
+            "hyprland":     lambda: WallpaperManager._run_cmd(
+                ["hyprctl", "hyprpaper", "preload", image_path]
+            ) and WallpaperManager._run_cmd(
+                ["hyprctl", "hyprpaper", "wallpaper", f",{image_path}"]
+            ),
+        }
 
-        elif desktop == "niri+noctalia":
-            if WallpaperManager._set_niri_wallpaper(image_path, noctalia=True):
-                return
+        if desktop in dispatch and dispatch[desktop]():
+            return
 
-        elif desktop == "niri":
-            if WallpaperManager._set_niri_wallpaper(image_path, noctalia=False):
-                return
-
-        elif desktop == "gnome":
-            if WallpaperManager._set_gnome_wallpaper(image_path):
-                return
-
-        elif desktop == "kde":
-            if WallpaperManager._set_kde_wallpaper(image_path):
-                return
-
-        elif desktop == "sway":
-            if WallpaperManager._set_sway_wallpaper(image_path):
-                return
-
-        elif desktop == "hyprland":
-            if WallpaperManager._set_hyprland_wallpaper(image_path):
-                return
-
-        # Unknown DE or detected method failed — try fallbacks
-        for fallback in [WallpaperManager._set_feh_wallpaper,
-                         WallpaperManager._set_nitrogen_wallpaper]:
-            if fallback(image_path):
+        # Fallbacks
+        for cmd in [["feh", "--bg-scale", image_path],
+                     ["nitrogen", "--set-zoom-fill", image_path]]:
+            if WallpaperManager._run_cmd(cmd):
                 return
 
         raise OSError("Could not set wallpaper. No supported desktop environment found.")
