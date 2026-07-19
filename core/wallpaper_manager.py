@@ -61,7 +61,7 @@ class WallpaperManager:
         system = platform.system()
         try:
             image_path = os.path.abspath(image_path)
-
+    
             if system == "Windows":
                 cached = WallpaperManager.get_cached_path(image_path)
                 if cached and not cached.exists():
@@ -260,6 +260,81 @@ class WallpaperManager:
             return False
 
     # ------------------------------------------------------------------
+    # Linux — Niri + Noctalia Shell
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_niri():
+        """Check if running on Niri compositor."""
+        niri_socket = os.environ.get("NIRI_SOCKET")
+        if niri_socket:
+            return True
+        xdg_desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
+        if "niri" in xdg_desktop.lower():
+            return True
+        return False
+
+    @staticmethod
+    def _is_noctalia():
+        """Check if Noctalia Shell is available via qs."""
+        try:
+            result = subprocess.run(
+                ["qs", "-c", "noctalia-shell", "--version"],
+                env=WallpaperManager._clean_env(),
+                capture_output=True, timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _set_niri_wallpaper(image_path):
+        """Set wallpaper on Niri compositor (with Noctalia Shell or swww/swaybg fallback)."""
+        env = WallpaperManager._clean_env()
+
+        # Method 1: Noctalia Shell IPC via qs (preferred)
+        if WallpaperManager._is_noctalia():
+            try:
+                result = subprocess.run(
+                    ["qs", "-c", "noctalia-shell", "ipc", "call",
+                     "wallpaper", "set", image_path, "all"],
+                    env=env, check=False,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
+                )
+                if result.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # Method 2: swww (common Wayland wallpaper daemon)
+        if shutil.which("swww"):
+            try:
+                result = subprocess.run(
+                    ["swww", "img", image_path],
+                    env=env, check=False,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
+                )
+                if result.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # Method 3: swaybg (plain Niri fallback)
+        if shutil.which("swaybg"):
+            try:
+                result = subprocess.run(
+                    ["swaybg", "-i", image_path, "-m", "fill"],
+                    env=env, check=False,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
+                )
+                if result.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    # ------------------------------------------------------------------
     # Linux — dispatcher
     # ------------------------------------------------------------------
 
@@ -271,7 +346,11 @@ class WallpaperManager:
         if WallpaperManager._is_cosmic():
             if WallpaperManager._set_cosmic_wallpaper(image_path):
                 return
-            # Fall through to generic methods if COSMIC write failed
+
+        # ===== Niri + Noctalia Shell =====
+        if WallpaperManager._is_niri():
+            if WallpaperManager._set_niri_wallpaper(image_path):
+                return
 
         # ===== GNOME / Mutter-based =====
         if WallpaperManager._set_gnome_wallpaper_direct(image_path):
