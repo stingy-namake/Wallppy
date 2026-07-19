@@ -1,7 +1,7 @@
 # Wallppy - Project Knowledge
 
 ## Overview
-Wallppy is a cross-platform wallpaper manager built with Python/PyQt5. Currently Linux-focused with plans for Windows/macOS support. Aggregates wallpapers from multiple online sources (Wallhaven, 4KWallpapers, Backiee) and local files.
+Wallppy is a Linux/macOS wallpaper manager built with Python/PyQt5. Aggregates wallpapers from multiple online sources (Wallhaven, 4KWallpapers, Backiee) and local files. Linux support includes GNOME, COSMIC, Niri+Noctalia, KDE, Sway, Hyprland, and X11 fallbacks (feh, nitrogen).
 
 ## Architecture
 
@@ -12,7 +12,7 @@ Wallppy/
 │   ├── extension.py     # WallpaperExtension ABC + registry
 │   ├── settings.py      # Persistent settings (~/.config/wallppy/settings.json)
 │   ├── workers.py       # QThread workers (search, download, thumbnail)
-│   ├── wallpaper_manager.py  # Cross-platform wallpaper setter
+│   ├── wallpaper_manager.py  # Linux/macOS wallpaper setter (detect DE → set)
 │   └── crash_handler.py # Crash logging and recovery
 ├── extensions/
 │   ├── __init__.py      # Extension registration (WARNING: register once only)
