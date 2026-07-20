@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QScrollArea, QGridLayout, QFrame, QStackedWidget,
     QProgressBar, QMessageBox, QCheckBox, QComboBox, QSizePolicy,
-    QToolButton, QShortcut, QGraphicsOpacityEffect
+    QToolButton, QShortcut, QGraphicsOpacityEffect, QApplication
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QThread, QTimer, QPropertyAnimation, QEasingCurve, QEvent
 from PyQt5.QtGui import QIcon, QPixmap, QKeySequence, QWheelEvent
@@ -25,6 +25,7 @@ COLOR_BG_SECONDARY = "#0a0a0c"
 COLOR_BG_TERTIARY = "#1e1e24"
 COLOR_ACCENT_PRIMARY = "#00d4ff"
 COLOR_ACCENT_SECONDARY = "#7b61ff"
+COLOR_ACCENT_BLUE = "#4d9fff"
 COLOR_TEXT_PRIMARY = "#ffffff"
 COLOR_TEXT_SECONDARY = "#a0a0b0"
 COLOR_TEXT_MUTED = "#6a6a7a"
@@ -129,7 +130,19 @@ class AnimatedFilterPanel(QFrame):
                 for opt in options:
                     cb = QCheckBox(opt["label"])
                     cb.setChecked(opt.get("default", False))
-                    cb.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; background: transparent; border: none;")
+                    cb.setStyleSheet(f"""
+                        QCheckBox {{
+                            color: {COLOR_TEXT_PRIMARY};
+                            background: transparent;
+                            border: 2px solid transparent;
+                            border-radius: 6px;
+                            padding: 4px 8px;
+                        }}
+                        QCheckBox:focus {{
+                            border: 2px solid {COLOR_ACCENT_BLUE};
+                            background-color: rgba(77, 159, 255, 0.08);
+                        }}
+                    """)
                     cb_layout.addWidget(cb)
                     key = f"{filter_id}.{opt['id']}"
                     self.widgets[key] = cb
@@ -157,7 +170,7 @@ class AnimatedFilterPanel(QFrame):
                 combo.setStyleSheet(f"""
                     QComboBox {{
                         background-color: {COLOR_BG_SECONDARY};
-                        border: 1px solid {COLOR_BORDER};
+                        border: 2px solid {COLOR_BORDER};
                         border-radius: 8px;
                         padding: 6px 12px;
                         color: {COLOR_TEXT_PRIMARY};
@@ -165,6 +178,10 @@ class AnimatedFilterPanel(QFrame):
                     }}
                     QComboBox:hover {{
                         border-color: {COLOR_BORDER_HOVER};
+                    }}
+                    QComboBox:focus {{
+                        border: 2px solid {COLOR_ACCENT_BLUE};
+                        background-color: rgba(77, 159, 255, 0.08);
                     }}
                     QComboBox::drop-down {{
                         border: none;
@@ -206,7 +223,7 @@ class AnimatedFilterPanel(QFrame):
                 font-weight: 600;
                 border: none;
             }}
-            QPushButton:hover {{
+            QPushButton:hover, QPushButton:focus {{
                 background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6bb0ff, stop:1 #b9a0fc);
             }}
             QPushButton:pressed {{
@@ -216,12 +233,21 @@ class AnimatedFilterPanel(QFrame):
                 background-color: {COLOR_BORDER};
                 color: {COLOR_TEXT_MUTED};
             }}
+            QPushButton:focus {{
+                outline: none;
+            }}
         """)
         self.apply_btn.clicked.connect(self._on_apply_clicked)
         main_layout.addWidget(self.apply_btn)
 
         self.scroll_area.setWidget(content_widget)
         panel_layout.addWidget(self.scroll_area)
+
+        # Install event filter for Tab cycling on all focusable widgets
+        for w in self.findChildren((QCheckBox, QComboBox)):
+            w.installEventFilter(self)
+        self.apply_btn.installEventFilter(self)
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def _on_apply_clicked(self):
         """Check if filters changed before emitting."""
@@ -279,6 +305,51 @@ class AnimatedFilterPanel(QFrame):
     def reset_last_applied(self):
         """Clear the last applied values."""
         self._last_applied_values = None
+
+    def _get_focusable_widgets(self):
+        """Return ordered list of focusable widgets in filter panel."""
+        widgets = []
+        for w in self.findChildren((QCheckBox, QComboBox)):
+            if w.parentWidget() and w.parentWidget().isVisible():
+                widgets.append(w)
+        if self.apply_btn:
+            widgets.append(self.apply_btn)
+        return widgets
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+            widgets = self._get_focusable_widgets()
+            if not widgets:
+                return False
+            current = QApplication.focusWidget()
+            try:
+                idx = widgets.index(current)
+            except ValueError:
+                idx = -1
+            if event.key() == Qt.Key_Tab:
+                next_idx = (idx + 1) % len(widgets)
+            else:
+                next_idx = (idx - 1) % len(widgets)
+            widgets[next_idx].setFocus()
+            return True
+        if event.type() == QEvent.KeyPress and obj == self.apply_btn and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.apply_btn.click()
+            return True
+        return super().eventFilter(obj, event)
+
+    def focusNextPrevChild(self, next: bool) -> bool:
+        """Constrain Tab cycling to filter panel widgets only."""
+        widgets = self._get_focusable_widgets()
+        if not widgets:
+            return False
+        current = QApplication.focusWidget()
+        try:
+            idx = widgets.index(current)
+        except ValueError:
+            idx = -1 if next else len(widgets)
+        new_idx = (idx + 1) % len(widgets) if next else (idx - 1) % len(widgets)
+        widgets[new_idx].setFocus()
+        return True
 
     def animate_toggle(self, expand):
         if self._animation and self._animation.state() == QPropertyAnimation.Running:
@@ -981,8 +1052,12 @@ class ResultsPage(QWidget):
         if self.overlay.isVisible():
             return
 
-        # Don't handle if filter panel is focused
-        if self.filter_panel.isVisible() and self.filter_panel.hasFocus():
+        # Don't handle if focus is inside filter panel (any child widget)
+        if self.filter_panel.isVisible() and self._filter_has_focus():
+            # Escape closes filter panel and returns to grid
+            if key == Qt.Key_Escape:
+                self.toggle_filter_panel()
+                return
             super().keyPressEvent(event)
             return
 
@@ -1015,14 +1090,21 @@ class ResultsPage(QWidget):
         if is_visible:
             self.filter_panel.animate_toggle(False)
             self.filter_toggle_btn.setText("▼ Filters")
+            # Restore focus to previously focused wallpaper
+            if self._focused_wallpaper:
+                self._focused_wallpaper.setFocus()
+            elif self.wallpapers:
+                self._focus_first_wallpaper()
         else:
             self.filter_panel.animate_toggle(True)
             self.filter_toggle_btn.setText("▲ Filters")
+            self._focus_first_filter()
 
     def on_apply_filters(self, filter_values):
         """Called when user clicks Apply in filter panel."""
         self._current_filter_values = filter_values.copy()
         self.filter_panel.set_apply_enabled(False)
+        self.toggle_filter_panel()
         self.start_search(self.current_query)
 
     def update_columns_from_width(self):
@@ -1038,11 +1120,19 @@ class ResultsPage(QWidget):
     def on_scroll(self, value):
         scrollbar = self.scroll_area.verticalScrollBar()
         self.scroll_to_top_btn.setVisible(scrollbar.value() > 200)
+        self._load_visible_thumbnails()
 
         if self.is_loading or self.current_page >= self.total_pages:
             return
         if scrollbar.maximum() - value < 200:
             self.load_next_page()
+
+    def _load_visible_thumbnails(self):
+        """Trigger lazy thumbnail loading for widgets visible in viewport."""
+        for i in range(self.grid_layout.count()):
+            item = self.grid_layout.itemAt(i)
+            if item and item.widget():
+                item.widget().load_visible_thumbnails()
 
     def scroll_to_top(self):
         scrollbar = self.scroll_area.verticalScrollBar()
@@ -1063,6 +1153,22 @@ class ResultsPage(QWidget):
     # ============================================================
     # SECTION: Grid Keyboard Navigation
     # ============================================================
+    def _focus_first_filter(self):
+        """Focus the first focusable widget inside the filter panel."""
+        if not self.filter_panel:
+            return
+        for w in self.filter_panel.findChildren((QCheckBox, QComboBox)):
+            w.setFocus()
+            return
+        self.filter_panel.setFocus()
+
+    def _filter_has_focus(self):
+        """True if focus is on filter panel or any of its children."""
+        focused = QApplication.focusWidget()
+        if focused and (focused == self.filter_panel or self.filter_panel.isAncestorOf(focused)):
+            return True
+        return False
+
     def _focus_first_wallpaper(self):
         """Set keyboard focus to first wallpaper in grid after search."""
         if not self.wallpapers:
@@ -1150,6 +1256,8 @@ class ResultsPage(QWidget):
         query = self.search_edit.text().strip()
         if query:
             self.search_requested.emit(query)
+        else:
+            self.search_requested.emit("")
 
     def start_search(self, query: str):
         self.current_query = query
@@ -1242,6 +1350,7 @@ class ResultsPage(QWidget):
                 self.results_container.setCurrentIndex(0)
                 self.rebuild_grid()
                 QTimer.singleShot(50, self._focus_first_wallpaper)
+                QTimer.singleShot(100, self._load_visible_thumbnails)
                 main_win = self.window()
                 if hasattr(main_win, 'status_bar'):
                     if self.current_query == "":
@@ -1252,6 +1361,7 @@ class ResultsPage(QWidget):
             self.wallpapers.extend(wallpapers)
             self.current_page = page
             self.append_to_grid(wallpapers)
+            QTimer.singleShot(100, self._load_visible_thumbnails)
             main_win = self.window()
             if hasattr(main_win, 'status_bar'):
                 main_win.status_bar.showMessage(f"Loaded {len(wallpapers)} more wallpapers (page {page}/{total_pages})")

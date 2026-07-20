@@ -2,6 +2,7 @@
 # SECTION: Imports & Dependencies
 # ============================================================
 import os
+from pathlib import Path
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QFileDialog, QComboBox, QFrame, QApplication,
@@ -166,6 +167,7 @@ class LandingPage(QWidget):
 
     search_requested  = pyqtSignal(str)
     explore_requested = pyqtSignal()
+    explore_local_requested = pyqtSignal()
     extension_changed = pyqtSignal(str)
     status_message    = pyqtSignal(str)
 
@@ -241,8 +243,10 @@ class LandingPage(QWidget):
         """)
 
         self.ext_combo = AnimatedComboBox()
-        self.ext_combo.addItems(get_extension_names())
-        self.ext_combo.setCurrentText(self.settings.extension_name)
+        for name in get_extension_names():
+            if name != "Local":
+                self.ext_combo.addItem(name)
+        self.ext_combo.setCurrentText(self.settings.extension_name if self.settings.extension_name != "Local" else self.ext_combo.itemText(0))
         self.ext_combo.currentTextChanged.connect(self.on_extension_changed)
         self.ext_combo.setFixedHeight(32)
         self.ext_combo.setStyleSheet(f"""
@@ -527,6 +531,34 @@ class LandingPage(QWidget):
 
         cl.addLayout(dir_row)
 
+        # ── Explore downloaded link ────────────────────────────────────
+        explore_dl_row = QHBoxLayout()
+        explore_dl_row.setContentsMargins(0, 6, 0, 0)
+        explore_dl_row.addStretch()
+
+        self.downloaded_label = QLabel(f'<font color="#4d9fff">explore downloaded wallpapers</font> →')
+        self.downloaded_label.setTextFormat(Qt.RichText)
+        self.downloaded_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.COLOR_TEXT_SECONDARY};
+                font-size: 12px;
+                background: transparent;
+                border: none;
+                padding: 3px 6px;
+                border-radius: 4px;
+            }}
+        """)
+        dl_shadow = QGraphicsDropShadowEffect(self.downloaded_label)
+        dl_shadow.setBlurRadius(8)
+        dl_shadow.setColor(QColor(77, 159, 255, 200))
+        dl_shadow.setOffset(0, 0)
+        self.downloaded_label.setGraphicsEffect(dl_shadow)
+        self.downloaded_label.setCursor(Qt.PointingHandCursor)
+        self.downloaded_label.mousePressEvent = lambda ev: self.emit_explore_local() if ev.button() == Qt.LeftButton else None
+        explore_dl_row.addWidget(self.downloaded_label)
+
+        cl.addLayout(explore_dl_row)
+
         # ── Shortcuts hint ──────────────────────────────────────────────
         shortcuts_hint = QLabel("<span style='color:#36364a;font-size:11px;'>Press <span style='background:rgba(128,128,128,0.1);padding:2px 6px;border-radius:4px;'>Ctrl+/</span> for all shortcuts</span>")
         shortcuts_hint.setTextFormat(Qt.RichText)
@@ -556,6 +588,9 @@ class LandingPage(QWidget):
 
     def emit_explore(self):
         self.explore_requested.emit()
+
+    def emit_explore_local(self):
+        self.explore_local_requested.emit()
 
     def on_extension_changed(self, name: str):
         if name != "Local":
@@ -595,11 +630,16 @@ class LandingPage(QWidget):
             self.status_message.emit("Ready")
     
     def _clear_extension_cache(self):
+        import shutil
         ext_name = self.ext_combo.currentText()
         with ThumbnailLoader._lock:
             keys_to_remove = [k for k in ThumbnailLoader._cache if ext_name.lower() in k.lower()]
             for k in keys_to_remove:
                 del ThumbnailLoader._cache[k]
+        api_cache_dir = Path.home() / ".cache" / "wallppy" / "api"
+        if api_cache_dir.exists():
+            shutil.rmtree(api_cache_dir, ignore_errors=True)
+            api_cache_dir.mkdir(parents=True, exist_ok=True)
         self.status_message.emit(f"{ext_name}: cache cleared successfully")
     
     def emit_search(self):
@@ -608,6 +648,8 @@ class LandingPage(QWidget):
         query = self.search_edit.text().strip()
         if query:
             self.search_requested.emit(query)
+        else:
+            self.explore_requested.emit()
 
     def choose_directory(self):
         folder = QFileDialog.getExistingDirectory(

@@ -5,7 +5,7 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
     QProgressBar, QLabel, QApplication, QStatusBar, QShortcut, QFrame,
-    QGraphicsOpacityEffect, QScrollArea
+    QGraphicsOpacityEffect, QScrollArea, QAction
 )
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, QSize, QEvent
 from PyQt5.QtGui import QPalette, QColor, QLinearGradient, QPainter, QBrush, QFont, QKeySequence
@@ -70,7 +70,7 @@ class ShortcutsOverlay(QWidget):
     SHORTCUTS = [
         ("Searching", [
             ("Ctrl+K", "Focus search bar"),
-            ("Enter", "Search"),
+            ("Enter", "Search / Explore"),
             ("Ctrl+N", "Go home + focus search"),
         ]),
         ("Navigation", [
@@ -85,13 +85,13 @@ class ShortcutsOverlay(QWidget):
             ("Enter", "Set as wallpaper"),
             ("Space", "Preview full image"),
             ("Ctrl+D", "Download wallpaper"),
-            ("Ctrl+Enter", "Set as wallpaper (global)"),
             ("Delete", "Delete downloaded file"),
         ]),
-        ("Filters & Sources", [
-            ("Ctrl+F", "Toggle filter panel"),
+        ("Sources & Downloads", [
             ("Ctrl+S", "Cycle wallpaper source"),
-            ("Ctrl+L", "Jump to Local source"),
+            ("Ctrl+L", "Explore downloaded wallpapers"),
+            ("Ctrl+F", "Toggle filters panel"),
+            ("Ctrl+,", "Change download directory"),
         ]),
         ("General", [
             ("Ctrl+/", "Show this overlay"),
@@ -303,6 +303,7 @@ class MainWindow(QMainWindow):
         self.landing_page = LandingPage(self.settings)
         self.landing_page.search_requested.connect(self.on_search_requested)
         self.landing_page.explore_requested.connect(self.on_explore_requested)
+        self.landing_page.explore_local_requested.connect(self.on_explore_local_requested)
         self.landing_page.extension_changed.connect(self.on_extension_changed)
         self.landing_page.status_message.connect(self.on_status_message)
         self.stacked.addWidget(self.landing_page)
@@ -327,6 +328,10 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, event):
         """Application-level event filter for grid navigation fallback."""
         if event.type() == QEvent.KeyPress and self.stacked.currentIndex() == 1:
+            # Skip if filter panel has focus
+            focused = QApplication.focusWidget()
+            if self.results_page._filter_has_focus():
+                return super().eventFilter(obj, event)
             key = event.key()
             nav_keys = {
                 Qt.Key_Up: (-1, 0), Qt.Key_K: (-1, 0),
@@ -335,7 +340,6 @@ class MainWindow(QMainWindow):
                 Qt.Key_Right: (0, 1), Qt.Key_L: (0, 1),
             }
             if key in nav_keys and event.modifiers() == Qt.NoModifier:
-                focused = QApplication.focusWidget()
                 from .wallpaper_widget import WallpaperWidget
                 if isinstance(focused, WallpaperWidget) and self.results_page._focused_wallpaper:
                     row_d, col_d = nav_keys[key]
@@ -344,14 +348,27 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, event):
-        """Only handle Escape here. Global shortcuts use QShortcut."""
-        if event.key() == Qt.Key_Escape and event.modifiers() == Qt.NoModifier:
+        """Handle Escape and Enter on landing page."""
+        key = event.key()
+        modifiers = event.modifiers()
+
+        if key == Qt.Key_Escape and modifiers == Qt.NoModifier:
             if self.stacked.currentIndex() == 1:
                 if self.results_page.overlay.isVisible():
-                    return  # overlay handles its own Escape
+                    return
+                elif self.results_page.filter_panel.isVisible() and self.results_page._filter_has_focus():
+                    self.results_page.toggle_filter_panel()
+                    return
                 else:
                     self.go_home()
                     return
+
+        # Enter on landing page — search or explore
+        if key in (Qt.Key_Return, Qt.Key_Enter) and modifiers == Qt.NoModifier:
+            if self.stacked.currentIndex() == 0:
+                self.landing_page.emit_search()
+                return
+
         super().keyPressEvent(event)
 
     def _setup_global_shortcuts(self):
@@ -371,30 +388,31 @@ class MainWindow(QMainWindow):
         sc.setContext(Qt.ApplicationShortcut)
         sc.activated.connect(self._download_focused)
 
-        # Ctrl+Enter — set focused wallpaper
-        sc = QShortcut(QKeySequence("Ctrl+Return"), self)
-        sc.setContext(Qt.ApplicationShortcut)
-        sc.activated.connect(self._set_focused_wallpaper)
-
-        # Ctrl+F — toggle filters
+        # Ctrl+F — toggle filters (results page only)
         sc = QShortcut(QKeySequence("Ctrl+F"), self)
         sc.setContext(Qt.ApplicationShortcut)
         sc.activated.connect(self._toggle_filters)
+
+        # Ctrl+S — cycle source (skip Local)
+        cycle_action = QAction("Cycle Source", self)
+        cycle_action.setShortcut(QKeySequence("Ctrl+S"))
+        cycle_action.triggered.connect(self._cycle_source)
+        self.addAction(cycle_action)
 
         # Ctrl+/ — show shortcuts
         sc = QShortcut(QKeySequence("Ctrl+/"), self)
         sc.setContext(Qt.ApplicationShortcut)
         sc.activated.connect(self._show_shortcuts_overlay)
 
-        # Ctrl+S — cycle source
-        sc = QShortcut(QKeySequence("Ctrl+S"), self)
-        sc.setContext(Qt.ApplicationShortcut)
-        sc.activated.connect(self._cycle_source)
-
-        # Ctrl+L — jump to Local source
+        # Ctrl+L — explore downloaded wallpapers
         sc = QShortcut(QKeySequence("Ctrl+L"), self)
         sc.setContext(Qt.ApplicationShortcut)
-        sc.activated.connect(self._select_local_source)
+        sc.activated.connect(self.on_explore_local_requested)
+
+        # Ctrl+, — change download directory
+        sc = QShortcut(QKeySequence("Ctrl+,"), self)
+        sc.setContext(Qt.ApplicationShortcut)
+        sc.activated.connect(self._change_download_dir)
 
         # Home — scroll to top on results page
         sc = QShortcut(QKeySequence("Home"), self)
@@ -415,10 +433,6 @@ class MainWindow(QMainWindow):
         if self.stacked.currentIndex() == 1 and self.results_page._focused_wallpaper:
             self.results_page._focused_wallpaper.emit_download()
 
-    def _set_focused_wallpaper(self):
-        if self.stacked.currentIndex() == 1 and self.results_page._focused_wallpaper:
-            self.results_page._focused_wallpaper._on_set_wallpaper_clicked()
-
     def _toggle_filters(self):
         if self.stacked.currentIndex() == 1:
             self.results_page.toggle_filter_panel()
@@ -428,16 +442,18 @@ class MainWindow(QMainWindow):
         idx = (combo.currentIndex() + 1) % combo.count()
         combo.setCurrentIndex(idx)
 
-    def _select_local_source(self):
-        combo = self.landing_page.ext_combo
-        for i in range(combo.count()):
-            if combo.itemText(i) == "Local":
-                combo.setCurrentIndex(i)
-                break
-
     def _scroll_to_top(self):
         if self.stacked.currentIndex() == 1:
             self.results_page.scroll_to_top()
+
+    def _change_download_dir(self):
+        from PyQt5.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Download Folder", self.settings.download_folder
+        )
+        if folder:
+            self.settings.set_download_folder(folder)
+            self.landing_page.dir_edit.setText(folder)
 
     def _show_shortcuts_overlay(self):
         """Toggle keyboard shortcuts overlay."""
@@ -840,6 +856,15 @@ class MainWindow(QMainWindow):
         """Handle explore request for recent uploads."""
         self.results_page.start_search("")
         self.stacked.setCurrentIndex(1)
+
+    def on_explore_local_requested(self):
+        """Handle explore request for local/downloaded wallpapers."""
+        local_ext = create_extension("Local")
+        if local_ext:
+            self.extension = local_ext
+            self.results_page.update_extension(local_ext)
+            self.results_page.start_search("")
+            self.stacked.setCurrentIndex(1)
 
     def go_home(self):
         """Return to landing page."""

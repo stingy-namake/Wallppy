@@ -308,7 +308,6 @@ class WallpaperWidget(QFrame):
         self._hover_anim = None
 
         self.init_ui()
-        QTimer.singleShot(0, self.load_thumbnail)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -506,6 +505,33 @@ class WallpaperWidget(QFrame):
         super().showEvent(event)
         self.update_downloaded_status()
         self.update_active_status()
+        QTimer.singleShot(0, self._try_load_if_visible)
+
+    def _is_in_viewport(self) -> bool:
+        """Check if this widget intersects the scroll area viewport."""
+        viewport = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'viewport'):
+                viewport = parent.viewport()
+                break
+            parent = parent.parent()
+        if not viewport:
+            return True
+        widget_pos = self.mapTo(viewport, self.rect().topLeft())
+        widget_rect = self.rect()
+        widget_rect.moveTopLeft(widget_pos)
+        return widget_rect.intersects(viewport.rect())
+
+    def _try_load_if_visible(self):
+        if self._loaded or self._is_loader_running():
+            return
+        if self._is_in_viewport():
+            self.load_thumbnail()
+
+    def load_visible_thumbnails(self):
+        """Called by parent on scroll to load newly visible thumbnails."""
+        self._try_load_if_visible()
 
     def update_downloaded_status(self):
         wall_id = self.extension.get_wallpaper_id(self.data)

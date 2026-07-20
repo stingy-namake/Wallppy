@@ -3,6 +3,7 @@ import time
 import traceback
 import threading
 import requests
+from collections import OrderedDict
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from PyQt5.QtCore import QThread, pyqtSignal, QSize, Qt
@@ -163,7 +164,8 @@ class DownloadWorker(CrashAwareThread):
 
 class ThumbnailLoader(CrashAwareThread):
     loaded = pyqtSignal(QPixmap)
-    _cache = {}
+    _cache = OrderedDict()
+    _cache_max = 200
     _lock = __import__('threading').Lock()
     _semaphore = __import__('threading').Semaphore(8)
 
@@ -175,6 +177,7 @@ class ThumbnailLoader(CrashAwareThread):
         try:
             with ThumbnailLoader._lock:
                 if self.url in ThumbnailLoader._cache:
+                    ThumbnailLoader._cache.move_to_end(self.url)
                     cached = ThumbnailLoader._cache[self.url]
                     if not cached.isNull():
                         self.loaded.emit(cached)
@@ -190,6 +193,8 @@ class ThumbnailLoader(CrashAwareThread):
                 pixmap = QPixmap.fromImage(reader.read())
                 with ThumbnailLoader._lock:
                     ThumbnailLoader._cache[self.url] = pixmap
+                    if len(ThumbnailLoader._cache) > ThumbnailLoader._cache_max:
+                        ThumbnailLoader._cache.popitem(last=False)
                 self.loaded.emit(pixmap)
                 return
 
@@ -221,6 +226,8 @@ class ThumbnailLoader(CrashAwareThread):
                 if not pixmap.isNull():
                     with ThumbnailLoader._lock:
                         ThumbnailLoader._cache[self.url] = pixmap
+                        if len(ThumbnailLoader._cache) > ThumbnailLoader._cache_max:
+                            ThumbnailLoader._cache.popitem(last=False)
                 self.loaded.emit(pixmap)
         except:
             self.loaded.emit(QPixmap())

@@ -1,4 +1,9 @@
+import os
+import json
+import hashlib
+import time
 import requests
+from pathlib import Path
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from typing import List, Dict, Any
@@ -14,6 +19,9 @@ class WallhavenExtension(WallpaperExtension):
         self.api_url = "https://wallhaven.cc/api/v1/search"
         self.api_key = api_key
         self._last_meta = {}
+        self._cache_dir = Path.home() / ".cache" / "wallppy" / "api"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_ttl = 600  # 10 minutes
 
         # Setup connection pooling with retries
         self.session = requests.Session()
@@ -36,6 +44,33 @@ class WallhavenExtension(WallpaperExtension):
         if self.api_key:
             headers["X-API-Key"] = self.api_key
         return headers
+
+    def _get_cache_key(self, params: Dict[str, Any]) -> str:
+        raw = json.dumps(params, sort_keys=True)
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    def _get_cached(self, params: Dict[str, Any]) -> Dict[str, Any] | None:
+        key = self._get_cache_key(params)
+        cache_file = self._cache_dir / f"{key}.json"
+        if not cache_file.exists():
+            return None
+        try:
+            age = time.time() - cache_file.stat().st_mtime
+            if age > self._cache_ttl:
+                return None
+            with open(cache_file, "r") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _set_cache(self, params: Dict[str, Any], data: Dict[str, Any]):
+        key = self._get_cache_key(params)
+        cache_file = self._cache_dir / f"{key}.json"
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(data, f)
+        except OSError:
+            pass
 
     def _build_category_string(self, categories_dict: str) -> str:
         """Build category string for Wallhaven API."""
@@ -96,6 +131,13 @@ class WallhavenExtension(WallpaperExtension):
         if ratio:
             params["ratios"] = ratio
 
+        # Check disk cache first
+        cached = self._get_cached(params)
+        if cached is not None:
+            self._last_meta = cached.get("meta", {})
+            raw_data = cached.get("data", [])
+            return [self._strip_wallpaper_data(wp) for wp in raw_data]
+
         try:
             response = self.session.get(
                 self.api_url, params=params, headers=self._get_headers(), timeout=15
@@ -103,6 +145,9 @@ class WallhavenExtension(WallpaperExtension):
             response.raise_for_status()
             data = response.json()
             self._last_meta = data.get("meta", {})
+
+            # Cache the full response
+            self._set_cache(params, data)
 
             # Strip unnecessary data to save memory
             raw_data = data.get("data", [])

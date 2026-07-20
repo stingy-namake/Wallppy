@@ -104,7 +104,35 @@ Examples:
 - Worker threads for network/IO operations (SearchWorker, DownloadWorker, ThumbnailLoader)
 - Thread safety via `threading.local()` for sessions, locks for caches
 - SVG icons inline as bytes (b"""<svg...""")
-- Animated hover effects via custom `HoverScaleEffect` QGraphicsEffect
+- Keyboard nav: `Qt.ApplicationShortcut` + `QShortcut`/`QAction` for global shortcuts
+- Qt5 key constants are UPPERCASE: `Qt.Key_K` not `Qt.Key_k`
+- `QApplication.focusWidget()` for detecting focused widget in event filters
+- `WallpaperWidget` children (buttons, labels) all set to `setFocusPolicy(Qt.NoFocus)` — Tab moves between wallpapers, not children
+- Filter panel: `AnimatedFilterPanel.eventFilter` intercepts Tab/Backtab for cycling, Enter triggers Apply
+- `HoverScaleEffect` removed — was interfering with key event delivery
+
+## Keyboard Navigation
+Full reference: `KEYBOARD_NAV_MAP.md`
+
+### Global Shortcuts (via QShortcut/QAction, Qt.ApplicationShortcut)
+- `Ctrl+K` — focus search bar
+- `Ctrl+N` — go home
+- `Ctrl+S` — cycle source (skips Local)
+- `Ctrl+D` — download focused wallpaper
+- `Ctrl+L` — explore downloaded wallpapers
+- `Ctrl+F` — toggle filter panel
+- `Ctrl+/` — shortcuts overlay
+- `Ctrl+,` — change download directory
+
+### Grid Navigation (arrows + hjkl, wraps around rows)
+- `Enter` — set wallpaper
+- `Space` — preview
+- `Delete` — remove downloaded file
+
+### Filter Panel (Tab cycles within, Escape closes)
+- Tab/Shift+Tab cycle checkboxes → combos → Apply button
+- Enter on Apply button applies filters and closes panel
+- Visual focus ring on focused filter widget (blue border)
 
 ## Dependencies
 - PyQt5 (GUI), requests (HTTP), Pillow (images), numpy/opencv (image processing)
