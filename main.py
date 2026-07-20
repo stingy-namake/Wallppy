@@ -18,22 +18,22 @@ GITHUB_API = "https://api.github.com/repos"
 # ── CLI Commands ──────────────────────────────────────────────────
 
 def cmd_update(args):
-    print("Checking for updates...")
+    print("Checking for updates...", flush=True)
     tag = args.version or _github_latest_tag()
     if not tag:
-        print("Failed to fetch latest version from GitHub.")
+        print("Failed to fetch latest version from GitHub.", flush=True)
         sys.exit(1)
 
     current = f"v{__version__}"
     if tag == current and not args.force:
-        print(f"Already up to date ({current}).")
+        print(f"Already up to date ({current}).", flush=True)
         return
 
-    print(f"Updating: {current} -> {tag}")
+    print(f"Updating: {current} -> {tag}", flush=True)
 
     binary_path = _find_binary()
     if not binary_path:
-        print("Cannot find wallppy binary. Was it installed via installer?")
+        print("Cannot find wallppy binary. Was it installed via installer?", flush=True)
         sys.exit(1)
 
     install_prefix = Path(binary_path).parent.parent
@@ -43,18 +43,18 @@ def cmd_update(args):
     try:
         asset_name = _github_find_asset(tag, arch)
         if not asset_name:
-            print(f"Could not find release asset for {tag} ({arch}).")
+            print(f"Could not find release asset for {tag} ({arch}).", flush=True)
             sys.exit(1)
 
         download_url = f"https://github.com/{REPO}/releases/download/{tag}/{asset_name}"
         tmp_bin = os.path.join(tmp_dir, "wallppy-new")
 
-        print(f"Downloading {asset_name}...")
+        print(f"Downloading {asset_name}...", flush=True)
         result = subprocess.run(
             ["curl", "-sL", "--fail", "-o", tmp_bin, download_url],
             capture_output=True, text=True)
         if result.returncode != 0 or not os.path.exists(tmp_bin):
-            print("Download failed.")
+            print("Download failed.", flush=True)
             sys.exit(1)
         os.chmod(tmp_bin, 0o755)
 
@@ -64,13 +64,13 @@ def cmd_update(args):
             shutil.move(tmp_bin, binary_path)
         except Exception:
             shutil.move(backup, binary_path)
-            print("Failed to replace binary. Restored backup.")
+            print("Failed to replace binary. Restored backup.", flush=True)
             sys.exit(1)
         os.remove(backup)
 
         _install_icon(install_prefix, tag, tmp_dir)
         _install_desktop(install_prefix, binary_path)
-        print(f"Updated to {tag}. Restart wallppy to use the new version.")
+        print(f"Updated to {tag}. Restart wallppy to use the new version.", flush=True)
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -79,7 +79,7 @@ def cmd_update(args):
 def cmd_uninstall(args):
     binary_path = _find_binary()
     if not binary_path:
-        print("wallppy not found.")
+        print("wallppy not found.", flush=True)
         sys.exit(1)
 
     install_prefix = Path(binary_path).parent.parent
@@ -95,18 +95,18 @@ def cmd_uninstall(args):
         Path.home() / ".cache" / "wallppy",
     ]
 
-    print("The following will be removed:")
+    print("The following will be removed:", flush=True)
     for f in files:
         if os.path.exists(f):
-            print(f"  {f}")
+            print(f"  {f}", flush=True)
     for d in dirs:
         if d.exists():
-            print(f"  {d}/")
+            print(f"  {d}/", flush=True)
 
     if not args.yes:
         confirm = input("\nProceed? [y/N] ").strip().lower()
         if confirm != "y":
-            print("Aborted.")
+            print("Aborted.", flush=True)
             return
 
     for f in files:
@@ -121,16 +121,16 @@ def cmd_uninstall(args):
         subprocess.run(["update-desktop-database", str(desktop_dir)],
                        capture_output=True)
 
-    print("Uninstalled.")
+    print("Uninstalled.", flush=True)
 
 
 def cmd_clean(_args):
     cache_dir = Path.home() / ".cache" / "wallppy"
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
-        print(f"Cache cleared: {cache_dir}")
+        print(f"Cache cleared: {cache_dir}", flush=True)
     else:
-        print("No cache found.")
+        print("No cache found.", flush=True)
 
 
 def cmd_clean_all(_args):
@@ -139,9 +139,9 @@ def cmd_clean_all(_args):
     for d in [cache_dir, config_dir]:
         if d.exists():
             shutil.rmtree(d)
-            print(f"Removed: {d}")
+            print(f"Removed: {d}", flush=True)
     if not config_dir.exists() and not cache_dir.exists():
-        print("Nothing to clean.")
+        print("Nothing to clean.", flush=True)
 
 
 # ── CLI Helpers ───────────────────────────────────────────────────
