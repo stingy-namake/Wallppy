@@ -130,6 +130,7 @@ After installation, manage wallppy from the terminal:
 | `Ctrl+S` | Cycle source |
 | `Ctrl+D` | Download focused wallpaper |
 | `Ctrl+F` | Toggle filter panel |
+| `Ctrl+L` | Browse downloaded wallpapers |
 | `Enter` | Set wallpaper / Search (from search bar) |
 | `Space` | Preview (expand) |
 | `Delete` | Remove downloaded file |

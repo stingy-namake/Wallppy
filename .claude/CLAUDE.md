@@ -1,18 +1,18 @@
 # Wallppy - Project Knowledge
 
 ## Overview
-Wallppy is a Linux/macOS wallpaper manager built with Python/PyQt5. Aggregates wallpapers from multiple online sources (Wallhaven, 4KWallpapers, Backiee) and local files. Linux support includes GNOME, COSMIC, Niri+Noctalia, KDE, Sway, Hyprland, and X11 fallbacks (feh, nitrogen).
+Wallppy is a Linux wallpaper manager built with Python/PyQt5. Aggregates wallpapers from multiple online sources (Wallhaven, 4KWallpapers, Backiee) and local files. Desktop environments: GNOME, COSMIC, Niri+Noctalia, KDE, Sway, Hyprland, X11 fallbacks (feh, nitrogen).
 
 ## Architecture
 
 ```
 Wallppy/
-├── main.py              # Entry point, Wayland detection, SSL setup
+├── main.py              # Entry point, CLI commands (update/uninstall/clean), Wayland detection
 ├── core/
 │   ├── extension.py     # WallpaperExtension ABC + registry
 │   ├── settings.py      # Persistent settings (~/.config/wallppy/settings.json)
 │   ├── workers.py       # QThread workers (search, download, thumbnail) + curl_fetch()
-│   ├── wallpaper_manager.py  # Linux/macOS wallpaper setter (detect DE → set)
+│   ├── wallpaper_manager.py  # Linux wallpaper setter (detect DE → set)
 │   └── crash_handler.py # Crash logging and recovery
 ├── extensions/
 │   ├── __init__.py      # Extension registration (WARNING: register once only)
@@ -76,10 +76,12 @@ python main.py
 wallppy  # if installed
 
 # CLI commands
-wallppy version        # show version
+wallppy --version      # show version
 wallppy update         # update to latest release
 wallppy update 3.7.0   # update to specific tag
-wallppy uninstall      # remove wallppy
+wallppy update --force # reinstall same version
+wallppy uninstall      # remove wallppy (asks confirmation)
+wallppy uninstall -y   # remove without confirmation
 wallppy clean          # clear API cache
 wallppy clean-all      # clear config + cache
 
@@ -117,7 +119,7 @@ Examples:
 - No comments unless requested
 - PyQt5 signal/slot pattern for communication
 - Worker threads for network/IO operations (SearchWorker, DownloadWorker, ThumbnailLoader)
-- Thread safety via `threading.local()` for sessions, locks for caches
+- Thread safety via locks for caches
 - SVG icons inline as bytes (b"""<svg...""")
 - Keyboard nav: `Qt.ApplicationShortcut` + `QShortcut`/`QAction` for global shortcuts
 - Qt5 key constants are UPPERCASE: `Qt.Key_K` not `Qt.Key_k`
@@ -152,4 +154,4 @@ Full reference: `KEYBOARD_NAV_MAP.md`
 ## Dependencies
 - PyQt5 (GUI), Pillow (images), numpy/opencv (image processing)
 - PyInstaller (packaging), beautifulsoup4 (parsing)
-- curl (system binary, used for all HTTP requests)
+- curl (system binary, required for all HTTP requests)
