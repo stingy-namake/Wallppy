@@ -71,14 +71,20 @@ COLOR_BORDER = "#2a2a35"
 
 ## Commands
 ```bash
-# Run the app
+# Run the app (GUI)
 python main.py
+wallppy  # if installed
+
+# CLI commands
+wallppy version        # show version
+wallppy update         # update to latest release
+wallppy update 3.7.0   # update to specific tag
+wallppy uninstall      # remove wallppy
+wallppy clean          # clear API cache
+wallppy clean-all      # clear config + cache
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Run with debug
-python main.py --debug
 
 # Wayland workaround
 QT_QPA_PLATFORM=wayland python main.py
