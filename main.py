@@ -9,7 +9,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-__version__ = "3.6.2"
+__version__ = "3.6.8"
 
 REPO = "stingy-namake/Wallppy"
 GITHUB_API = "https://api.github.com/repos"
