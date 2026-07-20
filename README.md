@@ -6,7 +6,7 @@
   
   *A beautiful (questionable) wallpaper manager for the linux desktop, because I'm too lazy to enter a website and download a wallpaper manually*
   
-  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/stingy-namake/Wallppy)
+  [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/stingy-namake/Wallppy)
   [![Python](https://img.shields.io/badge/python-3.11%2B-1E6FF0)](https://www.python.org/)
   [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/stingy-namake/Wallppy/pulls)
   
@@ -21,13 +21,13 @@
 ## ✨ Features
 
 - 🎯 **Multi-source browsing** - Search and browse wallpapers from multiple sources
-- 🌐 **Cross-platform** - Works on Windows, macOS, and Linux (including Wayland)
 - 📁 **Local library** - Browse your downloaded wallpapers with ease
 - 🔍 **Powerful filtering** - Filter by resolution, aspect ratio, categories, and more
-- ⚡ **Fast & responsive** - Smooth scrolling, lazy loading, and efficient caching
+- ⚡ **Fast loading** - Lazy thumbnail loading, LRU cache, API response caching
 - 🎨 **Beautiful UI** - Modern dark theme with smooth animations
 - 📥 **Batch downloads** - Queue multiple wallpapers for download
 - 🖥️ **One-click apply** - Set any wallpaper as your desktop background instantly
+- ⌨️ **Full keyboard nav** - Vim-style (hjkl) + arrow keys, wrap-around grid navigation
 
 <img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/67e5ce94-ff23-49d8-b59f-4a64cc9fb1e9" />
 
@@ -51,7 +51,8 @@
 
 - **Python** 3.11 or higher
 - **PyQt5** - Qt GUI framework
-- **Linux** - Only runs on Linux for now
+- **curl** - System binary for HTTP requests
+- **Linux** - Only runs on Linux
 
 ---
 
@@ -105,9 +106,16 @@ python main.py
 
 | Shortcut | Action |
 |----------|--------|
-| `Enter` | Search (from search bar) |
-| `ESC` | Close image preview |
-| `↑` | Scroll to top (floating button) |
+| `Ctrl+K` | Focus search bar |
+| `Ctrl+N` | Go home |
+| `Ctrl+S` | Cycle source |
+| `Ctrl+D` | Download focused wallpaper |
+| `Ctrl+F` | Toggle filter panel |
+| `Enter` | Set wallpaper / Search (from search bar) |
+| `Space` | Preview (expand) |
+| `Delete` | Remove downloaded file |
+| `↑` `↓` `←` `→` or `h` `j` `k` `l` | Navigate grid (wraps around) |
+| `ESC` | Close image preview / filter panel |
 
 ---
 
@@ -162,7 +170,8 @@ hyprctl hyprpaper wallpaper ",/path/to/image.jpg"
 
 1. Check the crash log at `~/.config/Wallppy/crash.log`
 2. Ensure all dependencies are installed: `pip install -r requirements.txt`
-3. Try running with: `python main.py --debug`
+3. Ensure `curl` is installed: `which curl`
+4. Try running with: `python main.py --debug`
 
 ### Wayland-specific issues
 
