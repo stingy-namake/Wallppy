@@ -1,4 +1,5 @@
 import os
+import time
 import random
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
@@ -18,6 +19,13 @@ from .wallpaper_widget import WallpaperWidget, AnimatedToolButton
 
 THUMB_SIZE = QSize(280, 158)
 THUMB_PADDING = 12
+
+DEBUG = True
+
+
+def _dbg(msg):
+    if DEBUG:
+        print(f"[PERF][results] {msg}")
 
 # Modern dark theme color palette - matching main_window.py
 COLOR_BG_PRIMARY = "#050508"
@@ -405,19 +413,32 @@ class FullImageLoader(QThread):
                     self.error.emit("Failed to load image from disk")
                 return
 
-            session = get_session()
-            response = session.get(self.url, timeout=30, stream=True)
-            if self._is_cancelled:
-                return
-            data = bytearray()
-            for chunk in response.iter_content(chunk_size=8192):
+            # Use curl — requests is broken on some machines
+            import subprocess
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                result = subprocess.run(
+                    ["curl", "-sL", "--max-time", "30",
+                     "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                     "-o", tmp_path, "-w", "%{http_code}",
+                     self.url],
+                    capture_output=True, text=True, timeout=35)
                 if self._is_cancelled:
                     return
-                data.extend(chunk)
-            pixmap = QPixmap()
-            pixmap.loadFromData(data)
-            if not self._is_cancelled:
-                self.loaded.emit(pixmap)
+                http_code = result.stdout.strip()
+                if http_code == "200" and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                    pixmap = QPixmap(tmp_path)
+                    if not pixmap.isNull():
+                        self.loaded.emit(pixmap)
+                    else:
+                        self.error.emit("Failed to decode image")
+                else:
+                    self.error.emit(f"HTTP {http_code}")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
         except Exception as e:
             if not self._is_cancelled:
                 self.error.emit(str(e))
@@ -1304,6 +1325,8 @@ class ResultsPage(QWidget):
         self._search_request_id += 1
         request_id = self._search_request_id
 
+        _dbg(f"search START query={query!r} page={page}")
+        t0 = time.perf_counter()
         worker = SearchWorker(self.extension, query, page, **filter_values)
         worker.finished.connect(lambda w, p, t, rid=request_id: self._on_search_finished_safe(w, p, t, rid))
         worker.error.connect(lambda msg, rid=request_id: self._on_search_error_safe(msg, rid))
@@ -1312,6 +1335,7 @@ class ResultsPage(QWidget):
         worker.start()
         self._current_search_worker = worker
         self._active_workers.append(worker)
+        self._search_t0 = t0
 
     def _on_search_finished_safe(self, wallpapers, page, total_pages, request_id):
         if request_id != self._search_request_id:
@@ -1335,6 +1359,9 @@ class ResultsPage(QWidget):
         worker.deleteLater()
 
     def on_search_finished(self, wallpapers, page, total_pages):
+        elapsed = (time.perf_counter() - getattr(self, '_search_t0', time.perf_counter())) * 1000
+        _dbg(f"search DONE in {elapsed:.0f}ms, page={page}, "
+             f"results={len(wallpapers)}, total_pages={total_pages}")
         self.is_loading = False
         self._fade_out_loading()
         self.search_finished.emit()
@@ -1348,7 +1375,10 @@ class ResultsPage(QWidget):
                 self.show_no_results()
             else:
                 self.results_container.setCurrentIndex(0)
+                t_grid = time.perf_counter()
                 self.rebuild_grid()
+                grid_ms = (time.perf_counter() - t_grid) * 1000
+                _dbg(f"grid rebuild {len(wallpapers)} widgets in {grid_ms:.0f}ms")
                 QTimer.singleShot(50, self._focus_first_wallpaper)
                 QTimer.singleShot(100, self._load_visible_thumbnails)
                 main_win = self.window()
@@ -1360,7 +1390,10 @@ class ResultsPage(QWidget):
         else:
             self.wallpapers.extend(wallpapers)
             self.current_page = page
+            t_grid = time.perf_counter()
             self.append_to_grid(wallpapers)
+            grid_ms = (time.perf_counter() - t_grid) * 1000
+            _dbg(f"grid append {len(wallpapers)} widgets in {grid_ms:.0f}ms")
             QTimer.singleShot(100, self._load_visible_thumbnails)
             main_win = self.window()
             if hasattr(main_win, 'status_bar'):

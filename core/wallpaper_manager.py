@@ -353,33 +353,24 @@ class WallpaperSetterWorker(QThread):
 
             self.progress.emit(0)
 
-            from core.workers import get_session
-            session = get_session()
-
-            try:
-                response = session.get(image_url, stream=True, timeout=30)
-                response.raise_for_status()
-            except Exception as e:
-                self.finished.emit(False, f"Download failed: {str(e)}", "")
-                return
-
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
+            # Use curl — requests is broken on some machines
+            import subprocess
             temp_filepath = filepath + ".tmp"
-
             try:
-                with open(temp_filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if self._is_cancelled:
-                            f.close()
-                            os.unlink(temp_filepath)
-                            return
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size:
-                                progress_pct = int(downloaded * 100 / total_size)
-                                self.progress.emit(progress_pct)
+                result = subprocess.run(
+                    ["curl", "-sL", "--max-time", "60",
+                     "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                     "-o", temp_filepath, "-w", "%{http_code}",
+                     image_url],
+                    capture_output=True, text=True, timeout=70)
+                http_code = result.stdout.strip()
+                if http_code != "200" or not os.path.exists(temp_filepath) or os.path.getsize(temp_filepath) == 0:
+                    if os.path.exists(temp_filepath):
+                        os.unlink(temp_filepath)
+                    self.finished.emit(False, f"Download failed: HTTP {http_code}", "")
+                    return
+
+                self.progress.emit(100)
 
                 if self._is_cancelled:
                     os.unlink(temp_filepath)

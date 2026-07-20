@@ -11,12 +11,12 @@ Wallppy/
 ├── core/
 │   ├── extension.py     # WallpaperExtension ABC + registry
 │   ├── settings.py      # Persistent settings (~/.config/wallppy/settings.json)
-│   ├── workers.py       # QThread workers (search, download, thumbnail)
+│   ├── workers.py       # QThread workers (search, download, thumbnail) + curl_fetch()
 │   ├── wallpaper_manager.py  # Linux/macOS wallpaper setter (detect DE → set)
 │   └── crash_handler.py # Crash logging and recovery
 ├── extensions/
 │   ├── __init__.py      # Extension registration (WARNING: register once only)
-│   ├── wallhaven.py     # Wallhaven.cc API
+│   ├── wallhaven.py     # Wallhaven.cc API (WallhavenAPI client + extension)
 │   ├── local.py         # Local folder browsing
 │   ├── fourkwallpapers.py
 │   ├── backiee.py
@@ -44,8 +44,17 @@ Wallppy/
 - Default download folder: `./wallpapers`
 
 ### Thumbnail Cache
-- In-memory cache: `ThumbnailLoader._cache` dict
-- Persistent metadata: `~/.cache/wallppy/local_metadata.json`
+- In-memory LRU cache: `ThumbnailLoader._cache` (OrderedDict, max 200 entries)
+- Lazy loading: thumbnails only fetched when widget visible in viewport
+- API disk cache: `~/.cache/wallppy/api/` (10min TTL, per query hash)
+
+## Networking
+- All HTTP via curl (subprocess) — requests/urllib3 broken on some machines (IPv6/TLS)
+- `curl_fetch()` in workers.py for thumbnails
+- `WallhavenAPI.search()` uses curl for API calls
+- `DownloadWorker` uses `curl -o` for downloads
+- `FullImageLoader` uses curl for preview images
+- `WallpaperSetterWorker` uses curl for wallpaper download
 
 ## Theme Colors
 ```python
@@ -135,5 +144,6 @@ Full reference: `KEYBOARD_NAV_MAP.md`
 - Visual focus ring on focused filter widget (blue border)
 
 ## Dependencies
-- PyQt5 (GUI), requests (HTTP), Pillow (images), numpy/opencv (image processing)
+- PyQt5 (GUI), Pillow (images), numpy/opencv (image processing)
 - PyInstaller (packaging), beautifulsoup4 (parsing)
+- curl (system binary, used for all HTTP requests)

@@ -11,6 +11,41 @@ from PyQt5.QtGui import QPixmap, QImageReader, QImage
 from typing import List, Dict, Any
 from .extension import WallpaperExtension
 
+DEBUG = True
+
+
+def _dbg(msg):
+    if DEBUG:
+        print(f"[PERF][thumb] {msg}")
+
+
+def _fetch_with_timeout(url: str, timeout: int = 10) -> bytes:
+    """Fetch URL with hard total timeout (requests has no total timeout)."""
+    result = [None]
+    error = [None]
+
+    def _do():
+        try:
+            session = get_session()
+            r = session.get(url, timeout=timeout, stream=True)
+            if r.status_code != 200:
+                raise Exception(f"HTTP {r.status_code}")
+            data = bytearray()
+            for chunk in r.iter_content(chunk_size=8192):
+                data.extend(chunk)
+            result[0] = bytes(data)
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=_do, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        raise TimeoutError(f"fetch timed out after {timeout}s")
+    if error[0]:
+        raise error[0]
+    return result[0]
+
 # Thread‑local storage for sessions
 _thread_local = threading.local()
 
@@ -31,7 +66,7 @@ def get_session():
 
 
 def curl_fetch(url: str, timeout: int = 15) -> bytes:
-    """Fallback fetch using system curl when requests fails (cloudflare blocked)."""
+    """Fetch using system curl — fast, no IPv6/TLS issues."""
     import subprocess
     import os
     curl_env = os.environ.copy()
@@ -39,12 +74,13 @@ def curl_fetch(url: str, timeout: int = 15) -> bytes:
     result = subprocess.run(
         ["curl", "-sL", "--max-time", str(timeout),
          "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-         "-H", "Referer: https://backiee.com/",
          url],
         capture_output=True,
         env=curl_env
     )
-    return result.content
+    if result.returncode != 0:
+        raise Exception(f"curl failed (rc={result.returncode}): {result.stderr[:200]}")
+    return result.stdout
 
 
 class CrashAwareThread(QThread):
@@ -113,52 +149,29 @@ class DownloadWorker(CrashAwareThread):
             self.finished.emit(True, filepath, filename, wall_id)
             return
 
+        # Use curl — requests is broken on some machines
+        import subprocess
+        url = download_urls[0]
         try:
-            session = get_session()
-            response = None
-            for url in download_urls:
-                try:
-                    response = session.get(url, stream=True, timeout=30)
-                    if response.status_code == 200:
-                        break
-                except Exception:
-                    continue
-            
-            if not response or response.status_code != 200:
-                # Fallback to curl if requests failed
-                try:
-                    data = curl_fetch(download_urls[0], timeout=30)
-                    if data:
-                        with open(filepath, 'wb') as f:
-                            f.write(data)
-                        self.progress.emit(100)
-                        self.finished.emit(True, filepath, filename, wall_id)
-                        return
-                except:
-                    pass
-                self.finished.emit(False, "", "404", wall_id)
-                return
-
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-            last_emit = 0
-            min_interval = 0.05
-
-            with open(filepath, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size:
-                            now = time.time()
-                            pct = int(downloaded * 100 / total_size)
-                            if pct == 100 or now - last_emit > min_interval:
-                                self.progress.emit(pct)
-                                last_emit = now
-
-            self.progress.emit(100)
-            self.finished.emit(True, filepath, filename, wall_id)
+            self.progress.emit(0)
+            result = subprocess.run(
+                ["curl", "-sL", "--max-time", "60",
+                 "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                 "-o", filepath,
+                 "-w", "%{http_code}",
+                 url],
+                capture_output=True, text=True, timeout=70)
+            http_code = result.stdout.strip()
+            if http_code == "200" and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                self.progress.emit(100)
+                self.finished.emit(True, filepath, filename, wall_id)
+            else:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                self.finished.emit(False, "", f"HTTP {http_code}", wall_id)
         except Exception as e:
+            if os.path.exists(filepath):
+                os.remove(filepath)
             self.finished.emit(False, "", str(e), wall_id)
 
 
@@ -174,12 +187,15 @@ class ThumbnailLoader(CrashAwareThread):
         self.url = url
 
     def _do_run(self):
+        t0 = time.perf_counter()
+        short_url = self.url.split("/")[-1] if "/" in self.url else self.url[:30]
         try:
             with ThumbnailLoader._lock:
                 if self.url in ThumbnailLoader._cache:
                     ThumbnailLoader._cache.move_to_end(self.url)
                     cached = ThumbnailLoader._cache[self.url]
                     if not cached.isNull():
+                        _dbg(f"cache HIT {short_url} in {(time.perf_counter()-t0)*1000:.0f}ms")
                         self.loaded.emit(cached)
                         return
 
@@ -195,21 +211,36 @@ class ThumbnailLoader(CrashAwareThread):
                     ThumbnailLoader._cache[self.url] = pixmap
                     if len(ThumbnailLoader._cache) > ThumbnailLoader._cache_max:
                         ThumbnailLoader._cache.popitem(last=False)
+                _dbg(f"local file {short_url} in {(time.perf_counter()-t0)*1000:.0f}ms")
                 self.loaded.emit(pixmap)
                 return
 
             with ThumbnailLoader._semaphore:
+                t_net = time.perf_counter()
+                data = None
+                # Try curl first — fast, no IPv6/TLS issues
                 try:
-                    session = get_session()
-                    response = session.get(self.url, timeout=10, stream=True)
-                    if response.status_code == 200:
-                        data = response.content
-                    else:
-                        raise Exception(f"HTTP {response.status_code}")
+                    t_curl = time.perf_counter()
+                    data = curl_fetch(self.url, timeout=8)
+                    curl_ms = (time.perf_counter() - t_curl) * 1000
+                    _dbg(f"  curl OK {curl_ms:.0f}ms, {len(data)} bytes")
                 except Exception as e:
-                    # Fallback to curl for cloudflare-blocked requests
-                    data = curl_fetch(self.url, timeout=10)
+                    curl_ms = (time.perf_counter() - t_curl) * 1000
+                    _dbg(f"  curl FAIL {curl_ms:.0f}ms: {type(e).__name__}: {e}")
+                # Fallback to requests (slow on some machines)
+                if data is None:
+                    try:
+                        t_req = time.perf_counter()
+                        data = _fetch_with_timeout(self.url, timeout=8)
+                        req_ms = (time.perf_counter() - t_req) * 1000
+                        _dbg(f"  requests OK {req_ms:.0f}ms, {len(data)} bytes")
+                    except Exception as e:
+                        req_ms = (time.perf_counter() - t_req) * 1000
+                        _dbg(f"  requests FAIL {req_ms:.0f}ms: {type(e).__name__}: {e}")
+                        data = b""
+                net_ms = (time.perf_counter() - t_net) * 1000
                 
+                t_img = time.perf_counter()
                 if len(data) > 500_000:
                     img = QImage()
                     img.loadFromData(data)
@@ -222,12 +253,17 @@ class ThumbnailLoader(CrashAwareThread):
                 else:
                     pixmap = QPixmap()
                     pixmap.loadFromData(data)
+                img_ms = (time.perf_counter() - t_img) * 1000
                 
                 if not pixmap.isNull():
                     with ThumbnailLoader._lock:
                         ThumbnailLoader._cache[self.url] = pixmap
                         if len(ThumbnailLoader._cache) > ThumbnailLoader._cache_max:
                             ThumbnailLoader._cache.popitem(last=False)
+                total_ms = (time.perf_counter() - t0) * 1000
+                _dbg(f"net {net_ms:.0f}ms + img {img_ms:.0f}ms = {total_ms:.0f}ms "
+                     f"({len(data)} bytes) {short_url}")
                 self.loaded.emit(pixmap)
         except:
+            _dbg(f"FAILED {short_url} in {(time.perf_counter()-t0)*1000:.0f}ms")
             self.loaded.emit(QPixmap())
