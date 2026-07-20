@@ -17,20 +17,6 @@ GITHUB_API = "https://api.github.com/repos"
 
 # ── CLI Commands ──────────────────────────────────────────────────
 
-def cmd_version(_args):
-    print(f"wallppy {__version__}")
-
-
-def cmd_clean(_args):
-    cache_dir = Path.home() / ".cache" / "wallppy"
-    if cache_dir.exists():
-        import shutil as _shutil
-        _shutil.rmtree(cache_dir)
-        print(f"Cache cleared: {cache_dir}")
-    else:
-        print("No cache found.")
-
-
 def cmd_update(args):
     print("Checking for updates...")
     tag = args.version or _github_latest_tag()
@@ -45,9 +31,9 @@ def cmd_update(args):
 
     print(f"Updating: {current} -> {tag}")
 
-    binary_path = shutil.which("wallppy")
+    binary_path = _find_binary()
     if not binary_path:
-        print("Cannot find wallppy in PATH. Was it installed via installer?")
+        print("Cannot find wallppy binary. Was it installed via installer?")
         sys.exit(1)
 
     install_prefix = Path(binary_path).parent.parent
@@ -91,9 +77,9 @@ def cmd_update(args):
 
 
 def cmd_uninstall(args):
-    binary_path = shutil.which("wallppy")
+    binary_path = _find_binary()
     if not binary_path:
-        print("wallppy not found in PATH.")
+        print("wallppy not found.")
         sys.exit(1)
 
     install_prefix = Path(binary_path).parent.parent
@@ -113,10 +99,9 @@ def cmd_uninstall(args):
     for f in files:
         if os.path.exists(f):
             print(f"  {f}")
-    if not args.yes:
-        for d in dirs:
-            if d.exists():
-                print(f"  {d}/ (config & cache)")
+    for d in dirs:
+        if d.exists():
+            print(f"  {d}/")
 
     if not args.yes:
         confirm = input("\nProceed? [y/N] ").strip().lower()
@@ -127,15 +112,9 @@ def cmd_uninstall(args):
     for f in files:
         if os.path.exists(f):
             os.remove(f)
-
-    if args.yes:
-        for d in dirs:
-            if d.exists():
-                shutil.rmtree(d)
-    else:
-        for d in dirs:
-            if d.exists():
-                shutil.rmtree(d)
+    for d in dirs:
+        if d.exists():
+            shutil.rmtree(d)
 
     desktop_dir = install_prefix / "share" / "applications"
     if desktop_dir.exists() and shutil.which("update-desktop-database"):
@@ -143,6 +122,15 @@ def cmd_uninstall(args):
                        capture_output=True)
 
     print("Uninstalled.")
+
+
+def cmd_clean(_args):
+    cache_dir = Path.home() / ".cache" / "wallppy"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+        print(f"Cache cleared: {cache_dir}")
+    else:
+        print("No cache found.")
 
 
 def cmd_clean_all(_args):
@@ -157,6 +145,16 @@ def cmd_clean_all(_args):
 
 
 # ── CLI Helpers ───────────────────────────────────────────────────
+
+def _find_binary():
+    path = shutil.which("wallppy")
+    if path:
+        return path
+    argv0 = Path(sys.argv[0]).resolve()
+    if argv0.exists():
+        return str(argv0)
+    return None
+
 
 def _github_latest_tag():
     result = subprocess.run(
@@ -259,11 +257,10 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="wallppy",
         description="Wallppy — Linux wallpaper manager")
-    sub = parser.add_subparsers(dest="command")
+    parser.add_argument("-v", "--version", action="version",
+                        version=f"wallppy {__version__}")
 
-    sub.add_parser("version", help="Show version")
-    sub.add_parser("clean", help="Clear API cache")
-    sub.add_parser("clean-all", help="Clear all config and cache")
+    sub = parser.add_subparsers(dest="command")
 
     p_update = sub.add_parser("update", help="Update to latest version")
     p_update.add_argument("version", nargs="?", default=None,
@@ -275,13 +272,15 @@ def build_parser():
     p_uninstall.add_argument("-y", "--yes", action="store_true",
                              help="Skip confirmation prompt")
 
+    sub.add_parser("clean", help="Clear API cache")
+    sub.add_parser("clean-all", help="Clear all config and cache")
+
     return parser
 
 
 # ── GUI Entry ─────────────────────────────────────────────────────
 
 def launch_gui():
-    # Use system certs in frozen mode
     if getattr(sys, 'frozen', False):
         system_certs = "/etc/ca-certificates/extracted/tls-ca-bundle.pem"
         if os.path.exists(system_certs):
@@ -324,15 +323,13 @@ if __name__ == "__main__":
 
     if args.command is None:
         launch_gui()
-    elif args.command == "version":
-        cmd_version(args)
-    elif args.command == "clean":
-        cmd_clean(args)
-    elif args.command == "clean-all":
-        cmd_clean_all(args)
     elif args.command == "update":
         cmd_update(args)
     elif args.command == "uninstall":
         cmd_uninstall(args)
+    elif args.command == "clean":
+        cmd_clean(args)
+    elif args.command == "clean-all":
+        cmd_clean_all(args)
     else:
         parser.print_help()

@@ -91,10 +91,13 @@ After installation, manage wallppy from the terminal:
 | Command | Description |
 |---------|-------------|
 | `wallppy` | Launch the GUI |
-| `wallppy update` | Update to latest version from GitHub |
+| `wallppy --version` | Show current version |
+| `wallppy --help` | Show help |
+| `wallppy update` | Update to latest version |
 | `wallppy update 3.7.0.alpha` | Update to specific version |
-| `wallppy uninstall` | Remove wallppy (asks for confirmation) |
-| `wallppy version` | Show current version |
+| `wallppy update --force` | Reinstall even if same version |
+| `wallppy uninstall` | Remove wallppy (asks confirmation) |
+| `wallppy uninstall --yes` | Skip confirmation |
 | `wallppy clean` | Clear API cache |
 | `wallppy clean-all` | Clear all config and cache |
 
