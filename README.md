@@ -74,7 +74,7 @@ cd Wallppy
 
 # Create a virtual environment (optional but recommended)
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -138,8 +138,7 @@ After installation, manage wallppy from the terminal:
 ## 🛠️ Configuration
 
 Wallppy stores its configuration in:
-- **Linux**: `~/.config/Wallppy/settings.json`
-<!-- - **Windows**: `%APPDATA%\Wallppy\settings.json` -->
+- **Linux**: `~/.config/wallppy/settings.json`
 
 ### Default Settings
 
@@ -148,13 +147,13 @@ Wallppy stores its configuration in:
   "download_folder": "./wallpapers",
   "extension": "Wallhaven",
   "categories": {
-    "general": false,
+    "general": true,
     "anime": true,
-    "people": false
+    "people": true
   },
   "purity": {
     "sfw": true,
-    "sketchy": false,
+    "sketchy": false
   }
 }
 ```
@@ -184,10 +183,9 @@ hyprctl hyprpaper wallpaper ",/path/to/image.jpg"
 
 ### App crashes on startup
 
-1. Check the crash log at `~/.config/Wallppy/crash.log`
+1. Check the crash log at `~/.config/wallppy/crash.log`
 2. Ensure all dependencies are installed: `pip install -r requirements.txt`
 3. Ensure `curl` is installed: `which curl`
-4. Try running with: `python main.py --debug`
 
 ### Wayland-specific issues
 
