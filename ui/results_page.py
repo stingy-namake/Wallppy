@@ -419,12 +419,15 @@ class FullImageLoader(QThread):
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
                 tmp_path = tmp.name
             try:
+                curl_env = os.environ.copy()
+                curl_env.pop("LD_LIBRARY_PATH", None)
                 result = subprocess.run(
                     ["curl", "-sL", "--max-time", "30",
                      "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                      "-o", tmp_path, "-w", "%{http_code}",
                      self.url],
-                    capture_output=True, text=True, timeout=35)
+                    capture_output=True, text=True, timeout=35,
+                    env=curl_env)
                 if self._is_cancelled:
                     return
                 http_code = result.stdout.strip()

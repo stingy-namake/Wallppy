@@ -362,7 +362,8 @@ class WallpaperSetterWorker(QThread):
                      "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                      "-o", temp_filepath, "-w", "%{http_code}",
                      image_url],
-                    capture_output=True, text=True, timeout=70)
+                    capture_output=True, text=True, timeout=70,
+                    env=WallpaperManager._clean_env())
                 http_code = result.stdout.strip()
                 if http_code != "200" or not os.path.exists(temp_filepath) or os.path.getsize(temp_filepath) == 0:
                     if os.path.exists(temp_filepath):
