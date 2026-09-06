@@ -70,7 +70,7 @@ def curl_fetch(url: str, timeout: int = 15) -> bytes:
     import subprocess
     import os
     curl_env = os.environ.copy()
-    curl_env["LD_LIBRARY_PATH"] = "/usr/lib:/lib"
+    curl_env.pop("LD_LIBRARY_PATH", None)
     result = subprocess.run(
         ["curl", "-sL", "--max-time", str(timeout),
          "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -154,13 +154,16 @@ class DownloadWorker(CrashAwareThread):
         url = download_urls[0]
         try:
             self.progress.emit(0)
+            curl_env = os.environ.copy()
+            curl_env.pop("LD_LIBRARY_PATH", None)
             result = subprocess.run(
                 ["curl", "-sL", "--max-time", "60",
                  "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                  "-o", filepath,
                  "-w", "%{http_code}",
                  url],
-                capture_output=True, text=True, timeout=70)
+                capture_output=True, text=True, timeout=70,
+                env=curl_env)
             http_code = result.stdout.strip()
             if http_code == "200" and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                 self.progress.emit(100)

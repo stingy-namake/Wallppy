@@ -52,7 +52,7 @@ def cmd_update(args):
         print(f"Downloading {asset_name}...", flush=True)
         result = subprocess.run(
             ["curl", "-sL", "--fail", "-o", tmp_bin, download_url],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=_curl_env())
         if result.returncode != 0 or not os.path.exists(tmp_bin):
             print("Download failed.", flush=True)
             sys.exit(1)
@@ -146,6 +146,14 @@ def cmd_clean_all(_args):
 
 # ── CLI Helpers ───────────────────────────────────────────────────
 
+def _curl_env():
+    """Env for curl subprocesses — strip PyInstaller's LD_LIBRARY_PATH so
+    system curl/OpenSSL are used instead of bundled ones."""
+    env = os.environ.copy()
+    env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
 def _find_binary():
     path = shutil.which("wallppy")
     if path:
@@ -160,7 +168,7 @@ def _github_latest_tag():
     result = subprocess.run(
         ["curl", "-sL", "--fail",
          f"{GITHUB_API}/{REPO}/releases/latest"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_curl_env())
     if result.returncode != 0:
         return None
     try:
@@ -174,7 +182,7 @@ def _github_find_asset(tag, arch):
     url = f"{GITHUB_API}/{REPO}/releases/tags/{tag}"
     result = subprocess.run(
         ["curl", "-sL", "--fail", url],
-        capture_output=True, text=True)
+        capture_output=True, text=True, env=_curl_env())
     if result.returncode != 0:
         return None
     try:
@@ -199,12 +207,12 @@ def _install_icon(prefix, tag, tmp_dir):
     url = f"https://raw.githubusercontent.com/{REPO}/{tag}/.resources/cool_image.png"
     result = subprocess.run(
         ["curl", "-sL", "--fail", "-o", str(icon_path), url],
-        capture_output=True)
+        capture_output=True, env=_curl_env())
     if result.returncode != 0:
         url = f"https://raw.githubusercontent.com/{REPO}/{tag}/.resources/wallppy.png"
         subprocess.run(
             ["curl", "-sL", "--fail", "-o", str(icon_path), url],
-            capture_output=True)
+            capture_output=True, env=_curl_env())
 
 
 def _install_desktop(prefix, binary_path):

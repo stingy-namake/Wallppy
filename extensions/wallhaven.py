@@ -72,13 +72,17 @@ class WallhavenAPI:
         # Use curl — requests is broken on some machines (IPv6/TLS issues)
         try:
             import subprocess
+            import os
             url = f"{self.BASE}/search?" + "&".join(
                 f"{k}={v}" for k, v in params.items() if v)
+            curl_env = os.environ.copy()
+            curl_env.pop("LD_LIBRARY_PATH", None)
             result = subprocess.run(
                 ["curl", "-sL", "--max-time", "15",
                  "-H", f"X-API-Key: {self.api_key}" if self.api_key else "true",
                  url],
-                capture_output=True, text=True, timeout=20)
+                capture_output=True, text=True, timeout=20,
+                env=curl_env)
             if result.returncode != 0:
                 raise Exception(f"curl failed: {result.stderr[:200]}")
             data = json.loads(result.stdout)

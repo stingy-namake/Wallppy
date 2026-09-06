@@ -95,7 +95,7 @@ class BackieeExtension(WallpaperExtension):
             logger.warning(f"Backiee get_download_url_from_page requests failed, trying curl: {e}")
             try:
                 curl_env = os.environ.copy()
-                curl_env["LD_LIBRARY_PATH"] = "/usr/lib:/lib"
+                curl_env.pop("LD_LIBRARY_PATH", None)
                 result = subprocess.run(
                     ["curl", "-sL", "--max-time", "15",
                      "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -144,7 +144,7 @@ class BackieeExtension(WallpaperExtension):
             try:
                 curl_env = os.environ.copy()
                 # Prefer system SSL over bundled one
-                curl_env["LD_LIBRARY_PATH"] = "/usr/lib:/lib"
+                curl_env.pop("LD_LIBRARY_PATH", None)
                 result = subprocess.run(
                     ["curl", "-sL", "--max-time", "15", 
                      "-A", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
