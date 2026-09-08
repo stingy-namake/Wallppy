@@ -201,6 +201,32 @@ QT_QPA_PLATFORM=wayland python main.py
 
 ---
 
+## 🌫️ Blur & Translucent Background
+
+On compositors that support background blur, wallppy's window becomes a dark
+translucent surface so your wallpaper shows through blurred behind it.
+The window is intentionally fully opaque everywhere else (no unblurred see-through).
+
+- **KDE Plasma** — works automatically (KWin blurs translucent windows; no config).
+- **niri** (≥ 26.04) — add this one-time rule to `~/.config/niri/config.kdl`:
+
+  ```kdl
+  // Enable blur behind wallppy's translucent window
+  window-rule {
+      match app-id="^wallppy$"
+      background-effect {
+          blur true   // xray is true by default → cheap wallpaper blur
+      }
+  }
+  ```
+
+  On niri older than 26.04 the window will still be translucent, but without
+  the blur effect (and this rule will error the config — don't add it there).
+
+- **GNOME / Sway / X11 (feh/nitrogen)** — blur unavailable; wallppy stays opaque.
+
+---
+
 ## ⚠️ Disclaimers
 
 ### Content Warning

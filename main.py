@@ -306,6 +306,7 @@ def launch_gui():
     from PyQt5.QtGui import QIcon
     from core.settings import Settings
     from core.crash_handler import CrashHandler
+    from core.wallpaper_manager import WallpaperManager
     from ui.main_window import MainWindow
     import extensions
 
@@ -315,7 +316,9 @@ def launch_gui():
     app = QApplication(sys.argv)
     app.setApplicationName("Wallppy")
     settings = Settings()
-    window = MainWindow(settings)
+    desktop = WallpaperManager._detect_desktop() if sys.platform.startswith('linux') else ""
+    translucent = desktop in ("niri", "niri+noctalia", "kde")
+    window = MainWindow(settings, translucent=translucent)
     window.show()
 
     crash.show_crash_dialog_if_needed(parent=window)

@@ -256,10 +256,20 @@ class MainWindow(QMainWindow):
     COLOR_TEXT_MUTED = "#6a6a7a"
     COLOR_BORDER = "#2a2a35"
     COLOR_BORDER_HOVER = "#6b6b76"
+
+    # Alpha for translucent window background (0-255). Used only when the
+    # compositor supports blur-behind (niri/KDE); opaque elsewhere.
+    TRANSLUCENT_ALPHA = 160
     
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, translucent: bool = False):
         super().__init__()
         self.settings = settings
+        self.translucent = translucent
+
+        # Translucent blur-behind window (niri/KDE). Requires a blur-capable
+        # compositor — otherwise the window would be unblurred see-through.
+        if self.translucent:
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
         
         # Initialize extension with fallback
         self.extension = create_extension(settings.extension_name)
@@ -566,7 +576,14 @@ class MainWindow(QMainWindow):
         """
         # Application palette
         dark_palette = QPalette()
-        dark_palette.setColor(QPalette.Window, QColor(self.COLOR_BG_PRIMARY))
+        if self.translucent:
+            dark_palette.setColor(QPalette.Window, QColor(5, 5, 8, self.TRANSLUCENT_ALPHA))
+            bg_primary = f"rgba(5, 5, 8, {self.TRANSLUCENT_ALPHA})"
+            bg_secondary = f"rgba(10, 10, 12, {self.TRANSLUCENT_ALPHA})"
+        else:
+            dark_palette.setColor(QPalette.Window, QColor(self.COLOR_BG_PRIMARY))
+            bg_primary = self.COLOR_BG_PRIMARY
+            bg_secondary = self.COLOR_BG_SECONDARY
         dark_palette.setColor(QPalette.WindowText, QColor(self.COLOR_TEXT_PRIMARY))
         dark_palette.setColor(QPalette.Base, QColor(self.COLOR_BG_SECONDARY))
         dark_palette.setColor(QPalette.AlternateBase, QColor(self.COLOR_BG_TERTIARY))
@@ -591,8 +608,8 @@ class MainWindow(QMainWindow):
             /* Main Window - Deep gradient background */
             QMainWindow {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {self.COLOR_BG_PRIMARY}, 
-                    stop:1 {self.COLOR_BG_SECONDARY});
+                    stop:0 {bg_primary}, 
+                    stop:1 {bg_secondary});
             }}
             
             /* Input Fields */
@@ -767,7 +784,7 @@ class MainWindow(QMainWindow):
             
             /* Status Bar */
             QStatusBar {{
-                background-color: {self.COLOR_BG_SECONDARY};
+                background-color: {bg_secondary};
                 color: {self.COLOR_TEXT_SECONDARY};
                 font-size: 12px;
                 border-top: 1px solid {self.COLOR_BORDER};
